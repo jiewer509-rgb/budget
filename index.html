@@ -224,7 +224,7 @@ const DEFAULT_CATEGORIES = [
   {id:"inc_bonus",  type:"income", nature:"recurring", name:"奖金/兼职", icon:"🎁", sort:2},
   {id:"inc_invest", type:"income", nature:"recurring", name:"理财收益", icon:"📈", sort:3},
   {id:"inc_other",  type:"income", nature:"recurring", name:"其他收入", icon:"➕", sort:4},
-  // 支出-固定
+  // 支出-每日固定
   {id:"exp_food",  type:"expense", nature:"recurring", name:"餐饮", icon:"🍜", sort:10},
   {id:"exp_trans", type:"expense", nature:"recurring", name:"交通", icon:"🚌", sort:11},
   {id:"exp_daily", type:"expense", nature:"recurring", name:"日用", icon:"🧻", sort:12},
@@ -235,14 +235,14 @@ const DEFAULT_CATEGORIES = [
   // 支出-周期性（摊销）
   {id:"exp_rent",  type:"expense", nature:"periodic", periodMonths:2,  name:"房租", icon:"🏠", sort:20},
   {id:"exp_insur", type:"expense", nature:"periodic", periodMonths:12, name:"保险/物业", icon:"🛡️", sort:21},
-  // 支出-偶发一次性
+  // 支出-偶发
   {id:"exp_shop",  type:"expense", nature:"oneoff", name:"大额购物(衣物)", icon:"🛍️", sort:30},
   {id:"exp_gift",  type:"expense", nature:"oneoff", name:"人情往来", icon:"🧧", sort:31},
   {id:"exp_travel",type:"expense", nature:"oneoff", name:"旅行", icon:"✈️", sort:32},
   {id:"exp_elec",  type:"expense", nature:"oneoff", name:"数码家电", icon:"💻", sort:33},
   {id:"exp_other", type:"expense", nature:"oneoff", name:"其他偶发", icon:"📦", sort:34},
 ];
-const NATURE_LABEL = {recurring:"固定", periodic:"周期性", oneoff:"偶发一次性"};
+const NATURE_LABEL = {recurring:"每日固定", periodic:"周期性", oneoff:"偶发"};
 
 /* ---------------- 工具函数 ---------------- */
 const $=s=>document.querySelector(s);
@@ -676,14 +676,14 @@ function renderBudget(v){
     '<div style="display:flex;gap:6px"><button class="btn sm" onclick="shiftBud(-1)">‹ 上月</button>'+
     (m===curMonth()?'':'<button class="btn sm" onclick="shiftBud(1)">下月 ›</button>')+'</div></div>'+
 
-    '<div class="card"><h3>月度预算（固定支出 + 周期性支出）</h3>'+
+    '<div class="card"><h3>月度预算（每日固定支出 + 周期性支出）</h3>'+
     budgeted.map(c=>{
       const b=Number(items[c.id]||0);
       const actual=monthExpenseByCat(m,c.id);
       const effectiveActual=(c.nature==='periodic')?periodicAvg(m,c):actual;
       const ratio=b>0?effectiveActual/b:0;
       const cls=ratio>1?'over':(ratio>=0.85?'warn':'');
-      const sub=c.nature==='periodic'?'每 '+c.periodMonths+' 月付一次':(c.nature==='recurring'?'固定':'');
+      const sub=c.nature==='periodic'?'每 '+c.periodMonths+' 月付一次':(c.nature==='recurring'?'每日固定':'');
       return '<div class="budget-row">'+
         '<div class="br-top"><span class="nm">'+c.icon+' '+esc(c.name)+(c.nature==='periodic'?' <span class="badge">周期</span>':'')+'</span>'+
         '<input type="number" min="0" step="1" placeholder="0" value="'+(b||'')+'" onchange="setBudget(\''+c.id+'\',this.value)" inputmode="decimal"></div>'+
@@ -693,7 +693,7 @@ function renderBudget(v){
       '</div>';
     }).join('')+'</div>'+
 
-    '<div class="card"><h3>偶发一次性支出（不摊入月度预算）</h3>'+
+    '<div class="card"><h3>偶发支出（不摊入月度预算）</h3>'+
       '<div class="kv"><span class="k">本月偶发合计</span><span class="v" style="color:var(--expense)">'+fmtMoney(oneoffSum)+'</span></div>'+
       '<div class="kv"><span class="k">年度偶发合计</span><span class="v" style="color:var(--expense)">'+fmtMoney(yOneoff)+'</span></div>'+
       (oneoff.map(c=>'<div class="kv"><span class="k">'+c.icon+' '+esc(c.name)+'</span><span class="v">'+fmtMoney(monthExpenseByCat(m,c.id))+'</span></div>').join(''))+
@@ -785,16 +785,16 @@ function renderCatManage(){
   const el=$('#catManage');if(!el)return;
   el.innerHTML='<button class="btn" style="width:100%;margin-bottom:6px" onclick="addCatDialog()">＋ 添加分类</button>'+
     '<div class="section-title" style="margin-top:0">收入</div>'+catRows('income')+
-    '<div class="section-title">支出 · 固定</div>'+catRows('expense','recurring')+
+    '<div class="section-title">支出 · 每日固定</div>'+catRows('expense','recurring')+
     '<div class="section-title">支出 · 周期性（摊销）</div>'+catRows('expense','periodic')+
-    '<div class="section-title">支出 · 偶发一次性</div>'+catRows('expense','oneoff');
+    '<div class="section-title">支出 · 偶发</div>'+catRows('expense','oneoff');
 }
 function addCatDialog(){
   const html='<h3>添加分类</h3>'+
     '<div class="field"><span>名称</span><input id="nc_name" type="text" placeholder="如：宠物"></div>'+
     '<div class="field"><span>图标</span><input id="nc_icon" type="text" placeholder="emoji，如 🐱" maxlength="4"></div>'+
     '<div class="field"><span>类型</span><select id="nc_type" style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink)"><option value="expense">支出</option><option value="income">收入</option></select></div>'+
-    '<div class="field"><span>性质</span><select id="nc_nature" style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink)"><option value="recurring">固定</option><option value="periodic">周期性（摊销）</option><option value="oneoff">偶发一次性</option></select></div>'+
+    '<div class="field"><span>性质</span><select id="nc_nature" style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink)"><option value="recurring">每日固定</option><option value="periodic">周期性（摊销）</option><option value="oneoff">偶发</option></select></div>'+
     '<div class="field" id="nc_period_wrap" style="display:none"><span>每几月</span><input id="nc_period" type="number" min="1" max="12" value="2"></div>'+
     '<div class="mrow"><button class="btn" onclick="closeModal(null)">取消</button><button class="btn primary" onclick="doAddCat()">添加</button></div>';
   modal(html);
