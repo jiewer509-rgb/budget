@@ -91,6 +91,13 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .cat.on .nm{color:#fff}
 .cat .badge{font-size:10px;color:var(--muted)}
 .cat.on .badge{color:rgba(255,255,255,.8)}
+.cat-scroll{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:6px 2px;margin-bottom:6px;scrollbar-width:none}
+.cat-scroll::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 12px;border-radius:12px;border:1px solid var(--border);background:var(--surface);cursor:pointer;min-width:56px}
+.chip .ico{font-size:20px}
+.chip .nm{font-size:11px;color:var(--ink-2);white-space:nowrap}
+.chip.on{border-color:var(--brand);background:var(--brand);color:#fff}
+.chip.on .nm{color:#fff}
 .field{display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:14px;color:var(--ink-2)}
 .field input[type=date]{flex:1;border:1px solid var(--border);background:var(--surface);color:var(--ink);
   border-radius:10px;padding:9px 10px;font-size:14px;font-family:inherit}
@@ -217,7 +224,7 @@ const DEFAULT_CATEGORIES = [
   {id:"inc_bonus",  type:"income", nature:"recurring", name:"奖金/兼职", icon:"🎁", sort:2},
   {id:"inc_invest", type:"income", nature:"recurring", name:"理财收益", icon:"📈", sort:3},
   {id:"inc_other",  type:"income", nature:"recurring", name:"其他收入", icon:"➕", sort:4},
-  // 支出-经常性
+  // 支出-固定
   {id:"exp_food",  type:"expense", nature:"recurring", name:"餐饮", icon:"🍜", sort:10},
   {id:"exp_trans", type:"expense", nature:"recurring", name:"交通", icon:"🚌", sort:11},
   {id:"exp_daily", type:"expense", nature:"recurring", name:"日用", icon:"🧻", sort:12},
@@ -235,7 +242,7 @@ const DEFAULT_CATEGORIES = [
   {id:"exp_elec",  type:"expense", nature:"oneoff", name:"数码家电", icon:"💻", sort:33},
   {id:"exp_other", type:"expense", nature:"oneoff", name:"其他偶发", icon:"📦", sort:34},
 ];
-const NATURE_LABEL = {recurring:"经常性", periodic:"周期性", oneoff:"偶发一次性"};
+const NATURE_LABEL = {recurring:"固定", periodic:"周期性", oneoff:"偶发一次性"};
 
 /* ---------------- 工具函数 ---------------- */
 const $=s=>document.querySelector(s);
@@ -312,6 +319,7 @@ let state={
   month:curMonth(),
   rec:{type:'expense',categoryId:null,amount:'',date:todayStr(),note:'',editId:null},
   statCat:null,     // 统计页下钻的分类 id
+  catExpanded:false,
 };
 
 /* ---------------- 持久化（主库 + 双副本） ---------------- */
@@ -385,11 +393,11 @@ function renderRecord(v){
         '<button class="'+(rec.type==='income'?'on income':'')+'" onclick="setRecType(\'income\')">收入</button>'+
       '</div>'+
       '<div class="amount-wrap"><span class="cur">¥</span><input id="amount" type="number" inputmode="decimal" placeholder="0" min="0" step="0.01" value="'+esc(rec.amount)+'" oninput="state.rec.amount=this.value"></div>'+
-      '<div class="cat-grid">'+cats.map(c=>
-        '<div class="cat'+(rec.categoryId===c.id?' on':'')+'" onclick="pickCat(\''+c.id+'\')">'+
-          '<span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span>'+
-          '<span class="badge">'+NATURE_LABEL[c.nature]+'</span></div>').join('')+
-      '</div>'+
+      '<div class="field" style="justify-content:space-between;margin-bottom:6px"><span style="font-weight:600;color:var(--ink)">分类</span>'+
+        '<button class="btn sm ghost" style="padding:3px 8px" onclick="toggleCat()">'+(state.catExpanded?'收起 ▴':'展开全部 ▾')+'</button></div>'+
+      (state.catExpanded
+        ? '<div class="cat-grid">'+cats.map(c=>catCell(c,false)).join('')+'</div>'
+        : '<div class="cat-scroll">'+cats.map(c=>catCell(c,true)).join('')+'</div>')+
       '<div class="field"><span>日期</span><input type="date" value="'+esc(rec.date)+'" onchange="state.rec.date=this.value"></div>'+
       '<div class="field"><span>备注</span><input type="text" placeholder="选填" value="'+esc(rec.note)+'" oninput="state.rec.note=this.value"></div>'+
       '<button class="save-btn" onclick="saveTx()">'+(editing?'保存修改':'保存')+'</button>'+
@@ -400,6 +408,12 @@ function renderRecord(v){
 
 function setRecType(t){state.rec.type=t;state.rec.categoryId=(catsOf(t)[0]||{}).id;state.rec.editId=null;render();}
 function pickCat(id){state.rec.categoryId=id;render();}
+function toggleCat(){state.catExpanded=!state.catExpanded;render();}
+function catCell(c,compact){
+  const on=state.rec.categoryId===c.id?' on':'';
+  if(compact)return '<div class="chip'+on+'" onclick="pickCat(\''+c.id+'\')"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span></div>';
+  return '<div class="cat'+on+'" onclick="pickCat(\''+c.id+'\')"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span><span class="badge">'+NATURE_LABEL[c.nature]+'</span></div>';
+}
 
 function saveTx(){
   const amt=parseFloat(state.rec.amount);
@@ -609,22 +623,42 @@ function renderLine(el,labels,vals,color){
  * ========================================================================= */
 function renderBudgetRef(){
   const el=$('#ref');if(!el)return;
-  const m=state.month, next=shiftMonth(m,1);
+  const m=state.month;
   const rows=budgetedCats().map(c=>{
-    // 近3月平均实际
     let avg=0;for(let i=0;i<3;i++)avg+=monthExpenseByCat(shiftMonth(m,-i),c.id);avg/=3;
     if(c.nature==='periodic'){avg=periodicAvg(m,c);} // 周期性用滚动平均
-    return {c,avg};
-  }).filter(r=>r.avg>0||r.c.nature==='recurring'||r.c.nature==='periodic');
+    const cur=(state.budgets[m]&&state.budgets[m].items)?state.budgets[m].items[c.id]:0;
+    const sug=Math.max(avg,cur||0);
+    return {c,avg,sug};
+  }).filter(r=>r.sug>0);
   if(!rows.length){el.innerHTML='<div class="empty">暂无历史数据，记几笔后这里会给出参考</div>';return;}
-  el.innerHTML=rows.map(r=>{
-    const cur=state.budgets[m]&&state.budgets[m].items?state.budgets[m].items[r.c.id]:0;
-    const sug=Math.max(r.avg,cur||0);
-    return '<div class="ref-row"><span class="nm">'+r.c.icon+' '+esc(r.c.name)+'</span>'+
+  // 建议预算构成饼图（图形优先）
+  const sorted=rows.slice().sort((a,b)=>b.sug-a.sug);
+  const TOP=7;let shown=sorted.slice(0,TOP);const rest=sorted.slice(TOP);
+  if(rest.length)shown.push({c:{id:'__other',name:'其他',icon:'📦'},avg:0,sug:rest.reduce((s,x)=>s+x.sug,0)});
+  shown=shown.map((it,i)=>({...it,color:i>=TOP?'var(--muted)':CAT_COLORS[i]}));
+  const total=shown.reduce((s,x)=>s+x.sug,0);
+  el.innerHTML='<div id="refdonut"></div>'+
+    rows.map(r=>'<div class="ref-row"><span class="nm">'+r.c.icon+' '+esc(r.c.name)+'</span>'+
       '<span class="v">近3月均 '+fmtMoney(r.avg)+'</span>'+
-      '<span class="sug">建议 '+fmtMoney(sug)+'</span></div>';
-  }).join('')+
-  '<div style="margin-top:8px;font-size:11px;color:var(--muted)">建议值 = 近3月平均实际（周期性按摊销周期滚动）与当前预算取较高者，仅作参考。</div>';
+      '<span class="sug">建议 '+fmtMoney(r.sug)+'</span></div>').join('')+
+    '<div style="margin-top:8px;font-size:11px;color:var(--muted)">建议值 = 近3月平均实际（周期性按摊销周期滚动）与当前预算取较高者，仅作参考。</div>';
+  drawSimpleDonut(document.getElementById('refdonut'),shown,total);
+}
+function drawSimpleDonut(el,items,total){
+  if(!el||total<=0)return;
+  const size=200,th=26,r=(size-th)/2,C=2*Math.PI*r,gap=2.5,cx=size/2,cy=size/2;
+  let off=0,segs='';
+  items.forEach(it=>{
+    const len=it.sug/total*C,dash=Math.max(len-gap,0.8);
+    segs+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+it.color+'" stroke-width="'+th+'" stroke-dasharray="'+dash+' '+(C-dash)+'" stroke-dashoffset="'+(-off)+'"></circle>';
+    off+=len;
+  });
+  el.innerHTML='<div class="donut-wrap"><svg viewBox="0 0 '+size+' '+size+'">'+
+    '<g transform="rotate(-90 '+cx+' '+cy+')">'+segs+'</g>'+
+    '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" class="donut-center">'+fmtMoney(total)+'</text>'+
+    '<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="donut-cap">建议总预算</text></svg>'+
+    '<div class="legend">'+items.map(it=>'<div class="lg"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.c.name)+' '+fmtNum(it.sug)+'</div>').join('')+'</div></div>';
 }
 
 /* =========================================================================
@@ -642,14 +676,14 @@ function renderBudget(v){
     '<div style="display:flex;gap:6px"><button class="btn sm" onclick="shiftBud(-1)">‹ 上月</button>'+
     (m===curMonth()?'':'<button class="btn sm" onclick="shiftBud(1)">下月 ›</button>')+'</div></div>'+
 
-    '<div class="card"><h3>月度预算（经常性 + 周期性）</h3>'+
+    '<div class="card"><h3>月度预算（固定支出 + 周期性支出）</h3>'+
     budgeted.map(c=>{
       const b=Number(items[c.id]||0);
       const actual=monthExpenseByCat(m,c.id);
       const effectiveActual=(c.nature==='periodic')?periodicAvg(m,c):actual;
       const ratio=b>0?effectiveActual/b:0;
       const cls=ratio>1?'over':(ratio>=0.85?'warn':'');
-      const sub=c.nature==='periodic'?'每 '+c.periodMonths+' 月付一次':(c.nature==='recurring'?'经常性':'');
+      const sub=c.nature==='periodic'?'每 '+c.periodMonths+' 月付一次':(c.nature==='recurring'?'固定':'');
       return '<div class="budget-row">'+
         '<div class="br-top"><span class="nm">'+c.icon+' '+esc(c.name)+(c.nature==='periodic'?' <span class="badge">周期</span>':'')+'</span>'+
         '<input type="number" min="0" step="1" placeholder="0" value="'+(b||'')+'" onchange="setBudget(\''+c.id+'\',this.value)" inputmode="decimal"></div>'+
@@ -751,7 +785,7 @@ function renderCatManage(){
   const el=$('#catManage');if(!el)return;
   el.innerHTML='<button class="btn" style="width:100%;margin-bottom:6px" onclick="addCatDialog()">＋ 添加分类</button>'+
     '<div class="section-title" style="margin-top:0">收入</div>'+catRows('income')+
-    '<div class="section-title">支出 · 经常性</div>'+catRows('expense','recurring')+
+    '<div class="section-title">支出 · 固定</div>'+catRows('expense','recurring')+
     '<div class="section-title">支出 · 周期性（摊销）</div>'+catRows('expense','periodic')+
     '<div class="section-title">支出 · 偶发一次性</div>'+catRows('expense','oneoff');
 }
@@ -760,7 +794,7 @@ function addCatDialog(){
     '<div class="field"><span>名称</span><input id="nc_name" type="text" placeholder="如：宠物"></div>'+
     '<div class="field"><span>图标</span><input id="nc_icon" type="text" placeholder="emoji，如 🐱" maxlength="4"></div>'+
     '<div class="field"><span>类型</span><select id="nc_type" style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink)"><option value="expense">支出</option><option value="income">收入</option></select></div>'+
-    '<div class="field"><span>性质</span><select id="nc_nature" style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink)"><option value="recurring">经常性</option><option value="periodic">周期性（摊销）</option><option value="oneoff">偶发一次性</option></select></div>'+
+    '<div class="field"><span>性质</span><select id="nc_nature" style="flex:1;padding:9px;border-radius:10px;border:1px solid var(--border);background:var(--surface);color:var(--ink)"><option value="recurring">固定</option><option value="periodic">周期性（摊销）</option><option value="oneoff">偶发一次性</option></select></div>'+
     '<div class="field" id="nc_period_wrap" style="display:none"><span>每几月</span><input id="nc_period" type="number" min="1" max="12" value="2"></div>'+
     '<div class="mrow"><button class="btn" onclick="closeModal(null)">取消</button><button class="btn primary" onclick="doAddCat()">添加</button></div>';
   modal(html);
