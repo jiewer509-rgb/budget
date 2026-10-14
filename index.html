@@ -555,7 +555,7 @@ function aggregateByCat(txs){
   let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val};});
   items.sort((a,b)=>b.value-a.value);
   const TOP=7;let shown=items.slice(0,TOP);const rest=items.slice(TOP);
-  if(rest.length)shown.push({id:'__other',name:'其他',value:rest.reduce((s,x)=>s+x.value,0)});
+  if(rest.length)shown.push({id:'__other',name:'其他',value:rest.reduce((s,x)=>s+x.value,0),restIds:rest.map(x=>x.id)});
   return shown.map((it,i)=>({...it,color:i>=TOP?'var(--muted)':CAT_COLORS[i]}));
 }
 function renderMonthDonut(){
@@ -580,11 +580,15 @@ function renderAnnualDonut(){
 function showTxDetail(containerSel, it, allTxs){
   const el=document.querySelector(containerSel); if(!el)return;
   if(!it){el.innerHTML='';return;}
-  if(it.id==='__other'){el.innerHTML='<div class="empty" style="padding:8px">"其他"为合并项，点击具体分类查看明细</div>';return;}
-  const list=allTxs.filter(t=>t.categoryId===it.id).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,100);
+  const isOther=it.id==='__other';
+  const ids=isOther?(it.restIds||[]):[it.id];
+  const list=allTxs.filter(t=>ids.includes(t.categoryId)).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,100);
   el.innerHTML='<div class="card" style="margin-top:10px"><h3>'+esc(it.name)+' · 明细（'+list.length+'条'+(list.length===100?'，最多显示100':'')+'）</h3>'+
-    (list.length?list.map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div>'+
-      '<div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">无记录</div>')+
+    (list.length?list.map(t=>{
+      const c=catById(t.categoryId);
+      return '<div class="row"><div class="mid"><div class="nm">'+(isOther&&c?esc(c.name)+' · ':'')+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div>'+
+        '<div class="amt out">-'+fmtMoney(t.amount)+'</div></div>';
+    }).join(''):'<div class="empty">无记录</div>')+
     '</div>';
 }
 
