@@ -150,6 +150,16 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .meter .fill.over{background:var(--critical)}
 .meter .fill.warn{background:var(--warn)}
 .br-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+.budget-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.btile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;cursor:pointer}
+.btile:active{opacity:.8}
+.btile .tn{font-size:13px;font-weight:600;margin-bottom:2px}
+.btile .tv{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.btile .tv .b{font-size:11px;color:var(--muted);font-weight:400}
+.btile .meter{margin-top:6px;height:6px}
+.btile.over{border-color:var(--critical)}
+.btile.over .tv{color:var(--critical)}
+.btile.warn{border-color:var(--warn)}
 
 /* ===== 图表 ===== */
 .chart{margin:6px 0}
@@ -497,7 +507,7 @@ function renderMonth(v){
       '<div class="tile"><div class="lb">偶发支出</div><div class="vl expense">'+fmtMoney(oneoffSum)+'</div><div class="dl">不摊入预算</div></div>'+
     '</div>'+
 
-    '<div class="card"><h3>支出分类占比 · 点色块看明细</h3><div id="donut"></div><div id="donutDetail"></div></div>';
+    '<div class="card"><h3>支出分类占比 · 点色块看明细</h3><div id="donut"></div></div>';
 
   renderMonthDonut();
 }
@@ -518,7 +528,7 @@ function renderTrend(v){
         '<div class="tile"><div class="lb">年度支出</div><div class="vl expense">'+fmtMoney(yExp)+'</div></div>'+
       '</div>'+
       '<div class="tile" style="margin-bottom:10px"><div class="lb">年度结余</div><div class="vl '+(yInc-yExp>=0?'income':'expense')+'">'+fmtMoney(yInc-yExp)+'</div></div>'+
-      '<div id="annualDonut"></div><div id="annualDetail"></div>'+
+      '<div id="annualDonut"></div>'+
     '</div>';
   renderBars();
   renderAnnualDonut();
@@ -526,7 +536,7 @@ function renderTrend(v){
 
 /* ---------------- 环形图（点色块看明细） ---------------- */
 function donutSVG(items, total, centerLabel){
-  const size=200,th=26,r=(size-th)/2,C=2*Math.PI*r,gap=2.5,cx=size/2,cy=size/2;
+  const size=200,th=26,r=(size-th)/2,C=2*Math.PI*r,gap=items.length>18?1:2.5,cx=size/2,cy=size/2;
   let off=0,segs='';
   items.forEach((it,i)=>{
     const len=it.value/total*C, dash=Math.max(len-gap,0.8);
@@ -538,7 +548,7 @@ function donutSVG(items, total, centerLabel){
     '<g transform="rotate(-90 '+cx+' '+cy+')">'+segs+'</g>'+
     '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" class="donut-center">'+fmtMoney(total)+'</text>'+
     '<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="donut-cap">'+centerLabel+'</text></svg>'+
-    '<div class="legend">'+items.map((it,i)=>'<div class="lg" data-i="'+i+'" style="cursor:pointer"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.name)+' '+fmtNum(it.value)+'</div>').join('')+'</div></div>';
+    '<div class="legend">'+items.map((it,i)=>'<div class="lg" data-i="'+i+'" style="cursor:pointer"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.name)+' <span class="badge" style="font-size:9px">'+natureShort(it.nature)+'</span> '+fmtNum(it.value)+'</div>').join('')+'</div></div>';
 }
 function bindDonutTap(el, items, onTap){
   el.querySelectorAll('[data-i]').forEach(n=>{
@@ -551,12 +561,12 @@ function bindDonutTap(el, items, onTap){
 }
 function aggregateByCat(txs){
   const by={};txs.forEach(t=>{by[t.categoryId]=(by[t.categoryId]||0)+Number(t.amount||0);});
-  let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val};});
+  let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val,nature:c?c.nature:'oneoff',icon:c?c.icon:'❓'};});
   items.sort((a,b)=>b.value-a.value);
-  const TOP=7;let shown=items.slice(0,TOP);const rest=items.slice(TOP);
-  if(rest.length)shown.push({id:'__other',name:'其他',value:rest.reduce((s,x)=>s+x.value,0),restIds:rest.map(x=>x.id)});
-  return shown.map((it,i)=>({...it,color:i>=TOP?'var(--muted)':CAT_COLORS[i]}));
+  // 展示全部具体分类，不合并"其他"；颜色用黄金角均匀取色
+  return items.map((it,i)=>({...it,color:'hsl('+Math.round((i*137.508)%360)+', 60%, 46%)'}));
 }
+function natureShort(nature){return {recurring:'固定',periodic:'周期',oneoff:'偶发'}[nature]||'';}
 function renderMonthDonut(){
   const el=$('#donut'); if(!el)return;
   const txs=txInMonth(state.month).filter(t=>t.type==='expense');
@@ -564,7 +574,7 @@ function renderMonthDonut(){
   const shown=aggregateByCat(txs);
   const total=shown.reduce((s,x)=>s+x.value,0);
   el.innerHTML=donutSVG(shown,total,'本月支出');
-  bindDonutTap(el, shown, it=>showTxDetail('#donutDetail', it, txs));
+  bindDonutTap(el, shown, it=>showTxDetail(it, txs));
 }
 function renderAnnualDonut(){
   const el=$('#annualDonut'); if(!el)return;
@@ -574,21 +584,15 @@ function renderAnnualDonut(){
   const shown=aggregateByCat(txs);
   const total=shown.reduce((s,x)=>s+x.value,0);
   el.innerHTML=donutSVG(shown,total,'年度支出');
-  bindDonutTap(el, shown, it=>showTxDetail('#annualDetail', it, txs));
+  bindDonutTap(el, shown, it=>showTxDetail(it, txs));
 }
-function showTxDetail(containerSel, it, allTxs){
-  const el=document.querySelector(containerSel); if(!el)return;
-  if(!it){el.innerHTML='';return;}
-  const isOther=it.id==='__other';
-  const ids=isOther?(it.restIds||[]):[it.id];
-  const list=allTxs.filter(t=>ids.includes(t.categoryId)).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,100);
-  el.innerHTML='<div class="card" style="margin-top:10px"><h3>'+esc(it.name)+' · 明细（'+list.length+'条'+(list.length===100?'，最多显示100':'')+'）</h3>'+
-    (list.length?list.map(t=>{
-      const c=catById(t.categoryId);
-      return '<div class="row"><div class="mid"><div class="nm">'+(isOther&&c?esc(c.name)+' · ':'')+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div>'+
-        '<div class="amt out">-'+fmtMoney(t.amount)+'</div></div>';
-    }).join(''):'<div class="empty">无记录</div>')+
-    '</div>';
+function showTxDetail(it, allTxs){
+  if(!it)return;
+  const list=allTxs.filter(t=>t.categoryId===it.id).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,200);
+  const total=list.reduce((s,t)=>s+Number(t.amount||0),0);
+  modal('<h3>'+esc(it.name)+'</h3><p>共 '+list.length+' 笔 · 合计 '+fmtMoney(total)+'</p>'+
+    (list.length?list.map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">无记录</div>')+
+    '<div class="mrow"><button class="btn" onclick="closeModal(null)">关闭</button></div>');
 }
 
 /* =========================================================================
@@ -690,43 +694,49 @@ function renderBudgetActual(){
       const over=b>0&&ratio>1;
       return {c,b,effectiveActual,ratio,over,overshoot:over?effectiveActual-b:0};
     });
+    rows.sort((a,b)=>(b.over-a.over)||(b.overshoot-a.overshoot)||(b.effectiveActual-a.effectiveActual));
     if(nature==='oneoff'){
-      const total=rows.reduce((s,r)=>s+r.effectiveActual,0);
-      if(total>0)html+='<div class="section-title">'+label+'</div>'+
-        '<div class="kv"><span class="k">本月合计</span><span class="v" style="color:var(--expense)">'+fmtMoney(total)+'</span></div>';
+      html+='<div class="section-title">'+label+'</div><div class="budget-grid">'+
+        rows.map(r=>'<div class="btile" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
+          '<div class="tn">'+r.c.icon+' '+esc(r.c.name)+'</div>'+
+          '<div class="tv" style="color:var(--expense)">'+fmtMoney(r.effectiveActual)+'</div>'+
+        '</div>').join('')+'</div>';
       return;
     }
-    rows.sort((a,b)=>(b.over-a.over)||(b.overshoot-a.overshoot)||(b.ratio-a.ratio));
-    html+='<div class="section-title">'+label+'</div>';
-    rows.forEach(r=>{
-      if(r.over)overCount++; if(r.b>0)setCount++;
-      const cls=r.over?'over':(r.b>0&&r.ratio>=0.85?'warn':'');
-      html+='<div class="budget-row">'+
-        '<div class="br-top"><span class="nm" onclick="showBudgetDetail(\''+r.c.id+'\')" style="cursor:pointer">'+r.c.icon+' '+esc(r.c.name)+' ›</span>'+
-        (r.over?'<span class="badge" style="color:var(--critical);border-color:var(--critical)">超支</span>':'')+'</div>'+
-        '<div class="br-top" style="margin-bottom:0">'+
-          '<span style="font-size:12px;color:var(--ink-2)">预算</span>'+
-          '<input type="number" min="0" step="1" placeholder="未设" value="'+(r.b||'')+'" onchange="setBudget(\''+r.c.id+'\',this.value)" inputmode="decimal">'+
-          '<span style="font-size:12px;color:var(--ink-2);margin-left:8px">实际</span>'+
-          '<span style="font-size:13px;font-weight:700;color:'+(r.over?'var(--critical)':'var(--ink)')+'">'+fmtMoney(r.effectiveActual)+'</span>'+
-        '</div>'+
-        '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(r.ratio*100,100)+'%"></div></div>'+
-      '</div>';
-    });
+    rows.forEach(r=>{if(r.over)overCount++; if(r.b>0)setCount++;});
+    html+='<div class="section-title">'+label+'</div><div class="budget-grid">'+
+      rows.map(r=>{
+        const cls=r.over?'over':(r.b>0&&r.ratio>=0.85?'warn':'');
+        return '<div class="btile '+cls+'" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
+          '<div class="tn">'+r.c.icon+' '+esc(r.c.name)+(r.over?' <span style="color:var(--critical)">超支</span>':'')+'</div>'+
+          '<div class="tv">'+fmtMoney(r.effectiveActual)+'<span class="b"> / '+fmtMoney(r.b)+'</span></div>'+
+          '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(r.ratio*100,100)+'%"></div></div>'+
+        '</div>';
+      }).join('')+'</div>';
   });
-  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:4px">'+
+  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+
     (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支</span>':'<span style="color:var(--good);font-weight:700">✅ 未超支</span>')+
-    ' · 已设 '+setCount+' 项 · 点分类名看明细</div>'+html;
+    ' · 已设 '+setCount+' 项 · 点卡片看明细/改预算</div>'+html;
 }
 
 function showBudgetDetail(catId){
   const m=state.month;
   const c=catById(catId); if(!c)return;
+  const b=Number((state.budgets[m]&&state.budgets[m].items)?state.budgets[m].items[catId]:0);
   const txs=txInMonth(m).filter(t=>t.type==='expense'&&t.categoryId===catId).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt));
   const total=txs.reduce((s,t)=>s+Number(t.amount||0),0);
-  modal('<h3>'+c.icon+' '+esc(c.name)+'</h3><p>'+monthLabel(m)+' · 共 '+txs.length+' 笔 · 合计 '+fmtMoney(total)+'</p>'+
-    (txs.length?txs.slice(0,100).map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">本月无记录</div>')+
-    '<div class="mrow"><button class="btn" onclick="closeModal(null)">关闭</button></div>');
+  modal('<h3>'+c.icon+' '+esc(c.name)+'</h3>'+
+    (c.nature!=='oneoff'?'<div class="field"><span>预算</span><input type="number" id="bd_input" min="0" step="1" placeholder="未设" value="'+(b||'')+'" inputmode="decimal"></div>':'')+
+    '<p>'+monthLabel(m)+' · 共 '+txs.length+' 笔 · 合计 '+fmtMoney(total)+'</p>'+
+    (txs.length?txs.slice(0,200).map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">本月无记录</div>')+
+    '<div class="mrow"><button class="btn" onclick="closeModal(null)">取消</button>'+
+    (c.nature!=='oneoff'?'<button class="btn primary" onclick="saveBudgetFromModal(\''+catId+'\')">保存预算</button>':'')+
+    '</div>');
+}
+function saveBudgetFromModal(catId){
+  const v=parseFloat(document.getElementById('bd_input').value)||0;
+  setBudget(catId,v);
+  closeModal(null);
 }
 
 /* ---------------- 预算建议（近12个月 P75；周期类摊销） ---------------- */
