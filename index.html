@@ -372,11 +372,12 @@ function render(){
   const v=$('#view');
   if(state.view==='record')renderRecord(v);
   else if(state.view==='month')renderMonth(v);
+  else if(state.view==='budget')renderBudgetPage(v);
   else if(state.view==='trend')renderTrend(v);
   else if(state.view==='settings')renderSettings(v);
 }
 function renderTabbar(){
-  const tabs=[['record','每日记账','✍️'],['month','本月','📊'],['trend','趋势','📈']];
+  const tabs=[['record','每日记账','✍️'],['month','本月','📊'],['budget','预算','🎯'],['trend','趋势','📈']];
   $('#tabbar').innerHTML=tabs.map(([k,n,i])=>'<button class="'+(state.view===k?'on':'')+'" onclick="go(\''+k+'\')"><span class="ti">'+i+'</span>'+n+'</button>').join('');
 }
 function go(k){state.view=k;state.statCat=null;render();window.scrollTo(0,0);}
@@ -496,11 +497,9 @@ function renderMonth(v){
       '<div class="tile"><div class="lb">偶发支出</div><div class="vl expense">'+fmtMoney(oneoffSum)+'</div><div class="dl">不摊入预算</div></div>'+
     '</div>'+
 
-    '<div class="card"><h3>支出分类占比 · 点色块看明细</h3><div id="donut"></div><div id="donutDetail"></div></div>'+
-    '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h3 style="margin:0">本月预算</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>';
+    '<div class="card"><h3>支出分类占比 · 点色块看明细</h3><div id="donut"></div><div id="donutDetail"></div></div>';
 
   renderMonthDonut();
-  renderBudgetActual();
 }
 function shiftStat(d){state.month=shiftMonth(state.month,d);state.statCat=null;render();}
 
@@ -655,39 +654,79 @@ function renderLine(el,labels,vals,color){
 }
 
 /* =========================================================================
- * 预算 vs 实际（一键填充建议，也可手动改）
+ * 预算页（独立 tab：分组、排序、点分类看明细）
  * ========================================================================= */
+function renderBudgetPage(v){
+  const m=state.month;
+  v.innerHTML=
+    '<div class="topbar"><div><h1>预算</h1><div class="sub">'+monthLabel(m)+'</div></div>'+
+    '<div style="display:flex;gap:6px;align-items:center">'+
+      '<button class="btn sm" onclick="shiftStat(-1)">‹</button>'+
+      (m===curMonth()?'':'<button class="btn sm" onclick="shiftStat(1)">›</button>')+
+      gearBtn()+
+    '</div></div>'+
+    '<div class="banner" style="border-color:var(--brand);border-left-color:var(--brand)">'+
+      '<b>预算怎么算的？</b> 每日固定类取近12个月 <b>P75 分位</b>（75% 的月份花得比这少）；周期类取近12个月<b>摊销月均</b>；偶发不摊入预算。点分类名可看每笔明细。'+
+    '</div>'+
+    '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">预算 vs 实际</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>';
+  renderBudgetActual();
+}
+
 function renderBudgetActual(){
   const el=$('#budgetActual'); if(!el)return;
   const m=state.month;
-  const budgeted=budgetedCats();
   const items=(state.budgets[m]&&state.budgets[m].items)||{};
+  const groups=[['recurring','每日固定'],['periodic','周期'],['oneoff','偶发（不摊入预算）']];
   let overCount=0, setCount=0;
-  const rows=budgeted.map(c=>{
-    const b=Number(items[c.id]||0);
-    const sug=Math.round(suggestBudget(c,m));
-    const actual=monthExpenseByCat(m,c.id);
-    const effectiveActual=(c.nature==='periodic')?periodicAvg(m,c):actual;
-    const ratio=b>0?effectiveActual/b:0;
-    const over=b>0&&ratio>1; if(over)overCount++;
-    if(b>0)setCount++;
-    const cls=over?'over':(b>0&&ratio>=0.85?'warn':'');
-    return '<div class="budget-row">'+
-      '<div class="br-top"><span class="nm">'+c.icon+' '+esc(c.name)+'</span>'+
-      (sug>0?'<span style="font-size:12px;color:var(--muted)">建议 '+fmtMoney(sug)+'</span>':'')+'</div>'+
-      '<div class="br-top" style="margin-bottom:0">'+
-        '<span style="font-size:13px;color:var(--ink-2)">预算</span>'+
-        '<input type="number" min="0" step="1" placeholder="未设" value="'+(b||'')+'" onchange="setBudget(\''+c.id+'\',this.value)" inputmode="decimal">'+
-        '<span style="font-size:13px;color:var(--ink-2);margin-left:8px">实际</span>'+
-        '<span style="font-size:14px;font-weight:700;color:'+(over?'var(--critical)':'var(--ink)')+'">'+fmtMoney(effectiveActual)+'</span>'+
-      '</div>'+
-      '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(ratio*100,100)+'%"></div></div>'+
-      (over?'<div class="br-meta"><span style="color:var(--critical);font-weight:700">⚠ 超支 '+fmtMoney(effectiveActual-b)+'</span></div>':'')+
-    '</div>';
-  }).join('');
-  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+
+  let html='';
+  groups.forEach(([nature,label])=>{
+    const cats=state.categories.filter(c=>c.type==='expense'&&c.nature===nature).sort((a,b)=>a.sort-b.sort);
+    if(!cats.length)return;
+    const rows=cats.map(c=>{
+      const b=Number(items[c.id]||0);
+      const actual=monthExpenseByCat(m,c.id);
+      const effectiveActual=(c.nature==='periodic')?periodicAvg(m,c):actual;
+      const ratio=b>0?effectiveActual/b:0;
+      const over=b>0&&ratio>1;
+      return {c,b,effectiveActual,ratio,over,overshoot:over?effectiveActual-b:0};
+    });
+    if(nature==='oneoff'){
+      const total=rows.reduce((s,r)=>s+r.effectiveActual,0);
+      if(total>0)html+='<div class="section-title">'+label+'</div>'+
+        '<div class="kv"><span class="k">本月合计</span><span class="v" style="color:var(--expense)">'+fmtMoney(total)+'</span></div>';
+      return;
+    }
+    rows.sort((a,b)=>(b.over-a.over)||(b.overshoot-a.overshoot)||(b.ratio-a.ratio));
+    html+='<div class="section-title">'+label+'</div>';
+    rows.forEach(r=>{
+      if(r.over)overCount++; if(r.b>0)setCount++;
+      const cls=r.over?'over':(r.b>0&&r.ratio>=0.85?'warn':'');
+      html+='<div class="budget-row">'+
+        '<div class="br-top"><span class="nm" onclick="showBudgetDetail(\''+r.c.id+'\')" style="cursor:pointer">'+r.c.icon+' '+esc(r.c.name)+' ›</span>'+
+        (r.over?'<span class="badge" style="color:var(--critical);border-color:var(--critical)">超支</span>':'')+'</div>'+
+        '<div class="br-top" style="margin-bottom:0">'+
+          '<span style="font-size:12px;color:var(--ink-2)">预算</span>'+
+          '<input type="number" min="0" step="1" placeholder="未设" value="'+(r.b||'')+'" onchange="setBudget(\''+r.c.id+'\',this.value)" inputmode="decimal">'+
+          '<span style="font-size:12px;color:var(--ink-2);margin-left:8px">实际</span>'+
+          '<span style="font-size:13px;font-weight:700;color:'+(r.over?'var(--critical)':'var(--ink)')+'">'+fmtMoney(r.effectiveActual)+'</span>'+
+        '</div>'+
+        '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(r.ratio*100,100)+'%"></div></div>'+
+      '</div>';
+    });
+  });
+  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:4px">'+
     (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支</span>':'<span style="color:var(--good);font-weight:700">✅ 未超支</span>')+
-    ' · 已设 '+setCount+'/'+budgeted.length+' 项 · 改预算自动保存</div>'+rows;
+    ' · 已设 '+setCount+' 项 · 点分类名看明细</div>'+html;
+}
+
+function showBudgetDetail(catId){
+  const m=state.month;
+  const c=catById(catId); if(!c)return;
+  const txs=txInMonth(m).filter(t=>t.type==='expense'&&t.categoryId===catId).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt));
+  const total=txs.reduce((s,t)=>s+Number(t.amount||0),0);
+  modal('<h3>'+c.icon+' '+esc(c.name)+'</h3><p>'+monthLabel(m)+' · 共 '+txs.length+' 笔 · 合计 '+fmtMoney(total)+'</p>'+
+    (txs.length?txs.slice(0,100).map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">本月无记录</div>')+
+    '<div class="mrow"><button class="btn" onclick="closeModal(null)">关闭</button></div>');
 }
 
 /* ---------------- 预算建议（近12个月 P75；周期类摊销） ---------------- */
