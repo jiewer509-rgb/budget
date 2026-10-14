@@ -369,15 +369,16 @@ function render(){
   renderTabbar();
   const v=$('#view');
   if(state.view==='record')renderRecord(v);
-  else if(state.view==='stats')renderStats(v);
-  else if(state.view==='budget')renderBudget(v);
+  else if(state.view==='month')renderMonth(v);
+  else if(state.view==='trend')renderTrend(v);
   else if(state.view==='settings')renderSettings(v);
 }
 function renderTabbar(){
-  const tabs=[['record','记账','✍️'],['stats','统计','📊'],['budget','预算','🎯'],['settings','设置','⚙️']];
+  const tabs=[['record','每日记账','✍️'],['month','本月','📊'],['trend','趋势','📈']];
   $('#tabbar').innerHTML=tabs.map(([k,n,i])=>'<button class="'+(state.view===k?'on':'')+'" onclick="go(\''+k+'\')"><span class="ti">'+i+'</span>'+n+'</button>').join('');
 }
 function go(k){state.view=k;state.statCat=null;render();window.scrollTo(0,0);}
+function gearBtn(){return '<button class="btn sm ghost" style="padding:4px 8px;font-size:18px" onclick="go(\'settings\')">⚙️</button>';}
 
 /* =========================================================================
  * 记账页
@@ -388,7 +389,7 @@ function renderRecord(v){
   if(!rec.categoryId && cats[0])rec.categoryId=cats[0].id;
   const editing=!!rec.editId;
   v.innerHTML=
-    '<div class="topbar"><div><h1>'+(editing?'编辑记录':'记一笔')+'</h1><div class="sub">'+monthLabel(curMonth())+'</div></div></div>'+
+    '<div class="topbar"><div><h1>'+(editing?'编辑记录':'记一笔')+'</h1><div class="sub">'+monthLabel(curMonth())+'</div></div>'+gearBtn()+'</div>'+
     '<div class="card">'+
       '<div class="seg">'+
         '<button class="'+(rec.type==='expense'?'on expense':'')+'" onclick="setRecType(\'expense\')">支出</button>'+
@@ -454,8 +455,8 @@ async function delTx(){
 }
 
 function renderRecentList(){
-  const list=txInMonth(state.month).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,60);
-  let html='<div class="card"><h3>'+monthLabel(state.month)+' 明细（最近60条）</h3>';
+  const list=txInMonth(curMonth()).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,60);
+  let html='<div class="card"><h3>'+monthLabel(curMonth())+' 明细（最近60条）</h3>';
   if(!list.length)html+='<div class="empty">本月还没有记录</div>';
   else html+=list.map(t=>{
     const c=catById(t.categoryId); const nm=c?c.name:'未知';
@@ -470,92 +471,121 @@ function renderRecentList(){
 }
 
 /* =========================================================================
- * 统计页
+ * 本月页（当月收支统计 + 预算）
  * ========================================================================= */
-function renderStats(v){
+function renderMonth(v){
   const m=state.month;
   const inc=monthIncome(m), exp=monthExpense(m), bal=inc-exp;
-  const yInc=yearIncome(m), yExp=yearExpense(m);
-  const budgeted=budgetedCats();
-  const budgetTotal=Object.values((state.budgets[m]||{}).items||{}).reduce((s,x)=>s+Number(x||0),0);
+  const oneoffSum=oneoffCats().reduce((s,c)=>s+monthExpenseByCat(m,c.id),0);
   v.innerHTML=
-    '<div class="topbar"><div><h1>统计</h1><div class="sub">'+monthLabel(m)+'</div></div>'+
-    '<div style="display:flex;gap:6px"><button class="btn sm" onclick="shiftStat(-1)">‹ 上月</button>'+
-    (m===curMonth()?'':'<button class="btn sm" onclick="shiftStat(1)">下月 ›</button>')+'</div></div>'+
+    '<div class="topbar"><div><h1>本月</h1><div class="sub">'+monthLabel(m)+'</div></div>'+
+    '<div style="display:flex;gap:6px;align-items:center">'+
+      '<button class="btn sm" onclick="shiftStat(-1)">‹</button>'+
+      (m===curMonth()?'':'<button class="btn sm" onclick="shiftStat(1)">›</button>')+
+      gearBtn()+
+    '</div></div>'+
 
-    '<div class="tiles">'+
-      '<div class="tile"><div class="lb">本月结余</div><div class="vl '+(bal>=0?'income':'expense')+'">'+fmtMoney(bal)+'</div><div class="dl">收入 − 支出</div></div>'+
-      '<div class="tile"><div class="lb">本月预算</div><div class="vl brand">'+fmtMoney(budgetTotal)+'</div><div class="dl">'+budgeted.length+' 个分类</div></div>'+
-    '</div>'+
     '<div class="tiles">'+
       '<div class="tile"><div class="lb">本月收入</div><div class="vl income">'+fmtMoney(inc)+'</div></div>'+
       '<div class="tile"><div class="lb">本月支出</div><div class="vl expense">'+fmtMoney(exp)+'</div></div>'+
     '</div>'+
-
-    '<div class="card"><h3>本月支出分类占比</h3><div id="donut"></div></div>'+
-    '<div class="card"><h3>近 6 个月收支趋势</h3><div id="bars"></div></div>'+
-    '<div class="card"><h3>年度汇总（'+m.split('-')[0]+'年）</h3>'+
-      '<div class="kv"><span class="k">年度总收入</span><span class="v" style="color:var(--income)">'+fmtMoney(yInc)+'</span></div>'+
-      '<div class="kv"><span class="k">年度总支出</span><span class="v" style="color:var(--expense)">'+fmtMoney(yExp)+'</span></div>'+
-      '<div class="kv"><span class="k">年度结余</span><span class="v" style="color:'+(yInc-yExp>=0?'var(--income)':'var(--expense)')+'">'+fmtMoney(yInc-yExp)+'</span></div>'+
+    '<div class="tiles">'+
+      '<div class="tile"><div class="lb">本月结余</div><div class="vl '+(bal>=0?'income':'expense')+'">'+fmtMoney(bal)+'</div></div>'+
+      '<div class="tile"><div class="lb">偶发支出</div><div class="vl expense">'+fmtMoney(oneoffSum)+'</div><div class="dl">不摊入预算</div></div>'+
     '</div>'+
-    '<div class="card"><h3>下月预算参考</h3><div id="ref"></div></div>';
 
-  renderDonut();
-  renderBars();
-  renderBudgetRef();
+    '<div class="card"><h3>支出分类占比 · 点色块看明细</h3><div id="donut"></div><div id="donutDetail"></div></div>'+
+    '<div class="card"><h3>预算 vs 实际</h3><div id="budgetActual"></div></div>'+
+    '<div class="card"><h3>下月预算建议</h3><div id="budgetSuggest"></div></div>';
+
+  renderMonthDonut();
+  renderBudgetActual();
+  renderBudgetSuggest();
 }
 function shiftStat(d){state.month=shiftMonth(state.month,d);state.statCat=null;render();}
 
-function renderDonut(){
-  const el=$('#donut'); if(!el)return;
-  const m=state.month;
-  const txs=txInMonth(m).filter(t=>t.type==='expense');
-  if(!txs.length){el.innerHTML='<div class="empty">本月暂无支出</div>';return;}
-  // 按分类汇总（支出）
-  const by={};txs.forEach(t=>{by[t.categoryId]=(by[t.categoryId]||0)+Number(t.amount||0);});
-  let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val,nature:c?c.nature:'recurring'};});
-  items.sort((a,b)=>b.value-a.value);
-  // 超过 7 个合并为"其他"
-  const TOP=7;let shown=items.slice(0,TOP);const rest=items.slice(TOP);
-  if(rest.length){shown.push({id:'__other',name:'其他',value:rest.reduce((s,x)=>s+x.value,0),nature:'recurring'});}
-  shown=shown.map((it,i)=>({...it,color:i>=TOP?'var(--muted)':CAT_COLORS[i]}));
-  const total=shown.reduce((s,x)=>s+x.value,0);
+/* =========================================================================
+ * 趋势页（近半年趋势 + 年度统计）
+ * ========================================================================= */
+function renderTrend(v){
+  const m=state.month, y=m.split('-')[0];
+  const yInc=yearIncome(m), yExp=yearExpense(m);
+  v.innerHTML=
+    '<div class="topbar"><div><h1>趋势</h1><div class="sub">'+y+'年</div></div>'+gearBtn()+'</div>'+
+    '<div class="card"><h3>近 6 个月收支趋势</h3><div id="bars"></div></div>'+
+    '<div class="card"><h3>年度收支统计（'+y+'年）</h3>'+
+      '<div class="tiles">'+
+        '<div class="tile"><div class="lb">年度收入</div><div class="vl income">'+fmtMoney(yInc)+'</div></div>'+
+        '<div class="tile"><div class="lb">年度支出</div><div class="vl expense">'+fmtMoney(yExp)+'</div></div>'+
+      '</div>'+
+      '<div class="tile" style="margin-bottom:10px"><div class="lb">年度结余</div><div class="vl '+(yInc-yExp>=0?'income':'expense')+'">'+fmtMoney(yInc-yExp)+'</div></div>'+
+      '<div id="annualDonut"></div><div id="annualDetail"></div>'+
+    '</div>';
+  renderBars();
+  renderAnnualDonut();
+}
 
+/* ---------------- 环形图（点色块看明细） ---------------- */
+function donutSVG(items, total, centerLabel){
   const size=200,th=26,r=(size-th)/2,C=2*Math.PI*r,gap=2.5,cx=size/2,cy=size/2;
   let off=0,segs='';
-  shown.forEach(it=>{
+  items.forEach((it,i)=>{
     const len=it.value/total*C, dash=Math.max(len-gap,0.8);
     segs+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+it.color+'" stroke-width="'+th+'" '+
-      'stroke-dasharray="'+dash+' '+(C-dash)+'" stroke-dashoffset="'+(-off)+'" style="cursor:pointer"></circle>';
+      'stroke-dasharray="'+dash+' '+(C-dash)+'" stroke-dashoffset="'+(-off)+'" data-i="'+i+'" style="cursor:pointer"></circle>';
     off+=len;
   });
-  const svg='<div class="donut-wrap"><svg viewBox="0 0 '+size+' '+size+'">'+
+  return '<div class="donut-wrap"><svg viewBox="0 0 '+size+' '+size+'">'+
     '<g transform="rotate(-90 '+cx+' '+cy+')">'+segs+'</g>'+
     '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" class="donut-center">'+fmtMoney(total)+'</text>'+
-    '<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="donut-cap">本月支出</text></svg>'+
-    '<div class="legend">'+shown.map((it,i)=>'<div class="lg" data-i="'+i+'" onclick="tapDonut('+i+')"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.name)+' '+fmtNum(it.value)+'</div>').join('')+'</div></div>';
-  el.innerHTML=svg;
-  el._items=shown; el._total=total;
+    '<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="donut-cap">'+centerLabel+'</text></svg>'+
+    '<div class="legend">'+items.map((it,i)=>'<div class="lg" data-i="'+i+'" style="cursor:pointer"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.name)+' '+fmtNum(it.value)+'</div>').join('')+'</div></div>';
 }
-function tapDonut(i){
-  const el=$('#donut');const items=el._items;const it=items[i];if(!it)return;
-  state.statCat=(state.statCat===it.id)?null:it.id;
-  // 高亮 legend
-  document.querySelectorAll('#donut .lg').forEach((lg,j)=>lg.classList.toggle('on',j===i&&state.statCat===it.id));
-  renderDrilldown(it);
+function bindDonutTap(el, items, onTap){
+  el.querySelectorAll('[data-i]').forEach(n=>{
+    n.addEventListener('click',()=>{
+      const i=parseInt(n.dataset.i);
+      el.querySelectorAll('.lg').forEach((lg,j)=>lg.classList.toggle('on',j===i));
+      onTap(items[i]);
+    });
+  });
 }
-function renderDrilldown(it){
-  // 下钻：该分类近 6 个月趋势
-  let box=document.getElementById('drill'); if(!box){box=document.createElement('div');box.id='drill';$('#donut').after(box);}
-  if(!it){box.innerHTML='';return;}
-  if(it.id==='__other'){box.innerHTML='<div class="empty" style="padding:8px">"其他"为合并项，无单独趋势</div>';return;}
-  const labels=[],vals=[];
-  for(let i=5;i>=0;i--){const mm=shiftMonth(state.month,-i);labels.push(mm.slice(2).replace('-','/')+'月');vals.push(monthExpenseByCat(mm,it.id));}
-  box.innerHTML='<div class="card" style="margin-top:10px"><h3>'+esc(it.name)+' · 近6个月</h3><div id="line"></div>'+
-    '<div class="kv"><span class="k">近3月月均</span><span class="v">'+fmtMoney((vals.slice(3).reduce((s,x)=>s+x,0))/3)+'</span></div>'+
-    '<div class="kv"><span class="k">6月合计</span><span class="v">'+fmtMoney(vals.reduce((s,x)=>s+x,0))+'</span></div></div>';
-  renderLine($('#line'),labels,vals,CAT_COLORS[0]);
+function aggregateByCat(txs){
+  const by={};txs.forEach(t=>{by[t.categoryId]=(by[t.categoryId]||0)+Number(t.amount||0);});
+  let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val};});
+  items.sort((a,b)=>b.value-a.value);
+  const TOP=7;let shown=items.slice(0,TOP);const rest=items.slice(TOP);
+  if(rest.length)shown.push({id:'__other',name:'其他',value:rest.reduce((s,x)=>s+x.value,0)});
+  return shown.map((it,i)=>({...it,color:i>=TOP?'var(--muted)':CAT_COLORS[i]}));
+}
+function renderMonthDonut(){
+  const el=$('#donut'); if(!el)return;
+  const txs=txInMonth(state.month).filter(t=>t.type==='expense');
+  if(!txs.length){el.innerHTML='<div class="empty">本月暂无支出</div>';return;}
+  const shown=aggregateByCat(txs);
+  const total=shown.reduce((s,x)=>s+x.value,0);
+  el.innerHTML=donutSVG(shown,total,'本月支出');
+  bindDonutTap(el, shown, it=>showTxDetail('#donutDetail', it, txs));
+}
+function renderAnnualDonut(){
+  const el=$('#annualDonut'); if(!el)return;
+  const y=state.month.split('-')[0];
+  const txs=state.transactions.filter(t=>!t.deletedAt&&t.type==='expense'&&t.date.startsWith(y));
+  if(!txs.length){el.innerHTML='<div class="empty">本年度暂无支出</div>';return;}
+  const shown=aggregateByCat(txs);
+  const total=shown.reduce((s,x)=>s+x.value,0);
+  el.innerHTML=donutSVG(shown,total,'年度支出');
+  bindDonutTap(el, shown, it=>showTxDetail('#annualDetail', it, txs));
+}
+function showTxDetail(containerSel, it, allTxs){
+  const el=document.querySelector(containerSel); if(!el)return;
+  if(!it){el.innerHTML='';return;}
+  if(it.id==='__other'){el.innerHTML='<div class="empty" style="padding:8px">"其他"为合并项，点击具体分类查看明细</div>';return;}
+  const list=allTxs.filter(t=>t.categoryId===it.id).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,100);
+  el.innerHTML='<div class="card" style="margin-top:10px"><h3>'+esc(it.name)+' · 明细（'+list.length+'条'+(list.length===100?'，最多显示100':'')+'）</h3>'+
+    (list.length?list.map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div>'+
+      '<div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">无记录</div>')+
+    '</div>';
 }
 
 /* =========================================================================
@@ -621,89 +651,72 @@ function renderLine(el,labels,vals,color){
 }
 
 /* =========================================================================
- * 下月预算参考
+ * 预算 vs 实际
  * ========================================================================= */
-function renderBudgetRef(){
-  const el=$('#ref');if(!el)return;
+function renderBudgetActual(){
+  const el=$('#budgetActual'); if(!el)return;
   const m=state.month;
-  const rows=budgetedCats().map(c=>{
-    let avg=0;for(let i=0;i<3;i++)avg+=monthExpenseByCat(shiftMonth(m,-i),c.id);avg/=3;
-    if(c.nature==='periodic'){avg=periodicAvg(m,c);} // 周期性用滚动平均
-    const cur=(state.budgets[m]&&state.budgets[m].items)?state.budgets[m].items[c.id]:0;
-    const sug=Math.max(avg,cur||0);
-    return {c,avg,sug};
-  }).filter(r=>r.sug>0);
-  if(!rows.length){el.innerHTML='<div class="empty">暂无历史数据，记几笔后这里会给出参考</div>';return;}
-  // 建议预算构成饼图（图形优先）
-  const sorted=rows.slice().sort((a,b)=>b.sug-a.sug);
-  const TOP=7;let shown=sorted.slice(0,TOP);const rest=sorted.slice(TOP);
-  if(rest.length)shown.push({c:{id:'__other',name:'其他',icon:'📦'},avg:0,sug:rest.reduce((s,x)=>s+x.sug,0)});
-  shown=shown.map((it,i)=>({...it,color:i>=TOP?'var(--muted)':CAT_COLORS[i]}));
-  const total=shown.reduce((s,x)=>s+x.sug,0);
-  el.innerHTML='<div id="refdonut"></div>'+
-    rows.map(r=>'<div class="ref-row"><span class="nm">'+r.c.icon+' '+esc(r.c.name)+'</span>'+
-      '<span class="v">近3月均 '+fmtMoney(r.avg)+'</span>'+
-      '<span class="sug">建议 '+fmtMoney(r.sug)+'</span></div>').join('')+
-    '<div style="margin-top:8px;font-size:11px;color:var(--muted)">建议值 = 近3月平均实际（周期性按摊销周期滚动）与当前预算取较高者，仅作参考。</div>';
-  drawSimpleDonut(document.getElementById('refdonut'),shown,total);
-}
-function drawSimpleDonut(el,items,total){
-  if(!el||total<=0)return;
-  const size=200,th=26,r=(size-th)/2,C=2*Math.PI*r,gap=2.5,cx=size/2,cy=size/2;
-  let off=0,segs='';
-  items.forEach(it=>{
-    const len=it.sug/total*C,dash=Math.max(len-gap,0.8);
-    segs+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="'+it.color+'" stroke-width="'+th+'" stroke-dasharray="'+dash+' '+(C-dash)+'" stroke-dashoffset="'+(-off)+'"></circle>';
-    off+=len;
-  });
-  el.innerHTML='<div class="donut-wrap"><svg viewBox="0 0 '+size+' '+size+'">'+
-    '<g transform="rotate(-90 '+cx+' '+cy+')">'+segs+'</g>'+
-    '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" class="donut-center">'+fmtMoney(total)+'</text>'+
-    '<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="donut-cap">建议总预算</text></svg>'+
-    '<div class="legend">'+items.map(it=>'<div class="lg"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.c.name)+' '+fmtNum(it.sug)+'</div>').join('')+'</div></div>';
+  const budgeted=budgetedCats();
+  const items=(state.budgets[m]&&state.budgets[m].items)||{};
+  let overCount=0;
+  const rows=budgeted.map(c=>{
+    const b=Number(items[c.id]||0);
+    const actual=monthExpenseByCat(m,c.id);
+    const effectiveActual=(c.nature==='periodic')?periodicAvg(m,c):actual;
+    const ratio=b>0?effectiveActual/b:0;
+    const over=ratio>1; if(over)overCount++;
+    const cls=over?'over':(ratio>=0.85?'warn':'');
+    return '<div class="budget-row">'+
+      '<div class="br-top"><span class="nm">'+c.icon+' '+esc(c.name)+'</span>'+
+      '<input type="number" min="0" step="1" placeholder="设预算" value="'+(b||'')+'" onchange="setBudget(\''+c.id+'\',this.value)" inputmode="decimal"></div>'+
+      '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(ratio*100,100)+'%"></div></div>'+
+      '<div class="br-meta"><span>实际 '+fmtMoney(effectiveActual)+'</span><span>预算 '+fmtMoney(b)+'</span>'+(over?'<span style="color:var(--critical);font-weight:700">超支</span>':'')+'</div>'+
+    '</div>';
+  }).join('');
+  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+
+    (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支</span>':'✅ 全部在预算内')+
+    ' · 改预算自动保存</div>'+rows;
 }
 
 /* =========================================================================
- * 预算页
+ * 下月预算建议（近12个月 P75 分位；周期类摊销）
  * ========================================================================= */
-function renderBudget(v){
-  const m=state.month;
-  const budgeted=budgetedCats(), oneoff=oneoffCats();
-  const items=(state.budgets[m]&&state.budgets[m].items)||{};
-  const oneoffSum=oneoff.reduce((s,c)=>s+monthExpenseByCat(m,c.id),0);
-  const yOneoff=oneoff.reduce((s,c)=>{let t=0;state.transactions.forEach(x=>{if(!x.deletedAt&&x.categoryId===c.id&&x.date.startsWith(m.split('-')[0]))t+=Number(x.amount||0);});return s+t;},0);
-
-  v.innerHTML=
-    '<div class="topbar"><div><h1>预算</h1><div class="sub">'+monthLabel(m)+'</div></div>'+
-    '<div style="display:flex;gap:6px"><button class="btn sm" onclick="shiftBud(-1)">‹ 上月</button>'+
-    (m===curMonth()?'':'<button class="btn sm" onclick="shiftBud(1)">下月 ›</button>')+'</div></div>'+
-
-    '<div class="card"><h3>月度预算（每日固定支出 + 周期性支出）</h3>'+
-    budgeted.map(c=>{
-      const b=Number(items[c.id]||0);
-      const actual=monthExpenseByCat(m,c.id);
-      const effectiveActual=(c.nature==='periodic')?periodicAvg(m,c):actual;
-      const ratio=b>0?effectiveActual/b:0;
-      const cls=ratio>1?'over':(ratio>=0.85?'warn':'');
-      const sub=c.nature==='periodic'?'每 '+c.periodMonths+' 月付一次':(c.nature==='recurring'?'每日固定':'');
-      return '<div class="budget-row">'+
-        '<div class="br-top"><span class="nm">'+c.icon+' '+esc(c.name)+(c.nature==='periodic'?' <span class="badge">周期</span>':'')+'</span>'+
-        '<input type="number" min="0" step="1" placeholder="0" value="'+(b||'')+'" onchange="setBudget(\''+c.id+'\',this.value)" inputmode="decimal"></div>'+
-        '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(ratio*100,100)+'%"></div></div>'+
-        '<div class="br-meta"><span>实际 '+fmtMoney(effectiveActual)+'</span><span>预算 '+fmtMoney(b)+'</span></div>'+
-        (c.nature==='periodic'?'<div class="br-meta"><span style="color:var(--muted)">'+esc(sub)+'</span></div>':'')+
-      '</div>';
-    }).join('')+'</div>'+
-
-    '<div class="card"><h3>偶发支出（不摊入月度预算）</h3>'+
-      '<div class="kv"><span class="k">本月偶发合计</span><span class="v" style="color:var(--expense)">'+fmtMoney(oneoffSum)+'</span></div>'+
-      '<div class="kv"><span class="k">年度偶发合计</span><span class="v" style="color:var(--expense)">'+fmtMoney(yOneoff)+'</span></div>'+
-      (oneoff.map(c=>'<div class="kv"><span class="k">'+c.icon+' '+esc(c.name)+'</span><span class="v">'+fmtMoney(monthExpenseByCat(m,c.id))+'</span></div>').join(''))+
-    '</div>';
-
-  v.innerHTML+='<div style="font-size:11px;color:var(--muted);padding:0 4px">提示：周期性支出按摊销周期滚动平均判断是否超支，避免付款月误报；偶发支出单独统计，不干扰日常月度预算。</div>';
+function suggestBudget(cat, refMonth){
+  let total=0, months=0;
+  for(let i=1;i<=12;i++){ total+=monthExpenseByCat(shiftMonth(refMonth,-i),cat.id); months++; }
+  if(cat.nature==='periodic') return total/months; // 周期类摊销到月
+  const vals=[];
+  for(let i=1;i<=12;i++) vals.push(monthExpenseByCat(shiftMonth(refMonth,-i),cat.id));
+  const sorted=vals.filter(v=>v>0).sort((a,b)=>a-b);
+  if(!sorted.length) return total/months;
+  return sorted[Math.min(sorted.length-1, Math.floor(sorted.length*0.75))];
 }
-function shiftBud(d){state.month=shiftMonth(state.month,d);render();}
+function renderBudgetSuggest(){
+  const el=$('#budgetSuggest'); if(!el)return;
+  const next=shiftMonth(state.month,1);
+  const rows=budgetedCats().map(c=>({c, sug:suggestBudget(c,state.month)}));
+  if(!rows.some(r=>r.sug>0)){el.innerHTML='<div class="empty">历史数据不足，记满几个月后会给出建议</div>';return;}
+  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">按近12个月 P75 分位（周期类摊销）估算，填入 '+monthLabel(next)+' 预算</div>'+
+    rows.map(r=>{
+      if(r.sug<=0)return '';
+      const sug=Math.round(r.sug);
+      return '<div class="ref-row"><span class="nm">'+r.c.icon+' '+esc(r.c.name)+'</span>'+
+        '<span class="v">建议 '+fmtMoney(sug)+'</span>'+
+        '<button class="btn sm primary" onclick="applySuggestion(\''+r.c.id+'\','+sug+')">填入</button></div>';
+    }).join('')+
+    '<button class="btn sm" style="width:100%;margin-top:8px" onclick="applyAllSuggestions()">一键填入全部</button>';
+}
+function applySuggestion(catId,val){
+  const next=shiftMonth(state.month,1);
+  if(!state.budgets[next])state.budgets[next]={items:{}};
+  state.budgets[next].items[catId]=val;
+  saveAll();render();toast('已填入 '+monthLabel(next));
+}
+function applyAllSuggestions(){
+  const next=shiftMonth(state.month,1);
+  budgetedCats().forEach(c=>{const s=suggestBudget(c,state.month); if(s>0){if(!state.budgets[next])state.budgets[next]={items:{}}; state.budgets[next].items[c.id]=Math.round(s);}});
+  saveAll();render();toast('已填入全部建议');
+}
 function setBudget(catId,val){
   const m=state.month;const v=parseFloat(val)||0;
   if(!state.budgets[m])state.budgets[m]={items:{}};
@@ -787,9 +800,7 @@ function renderCatManage(){
   const el=$('#catManage');if(!el)return;
   el.innerHTML='<button class="btn" style="width:100%;margin-bottom:6px" onclick="addCatDialog()">＋ 添加分类</button>'+
     '<div class="section-title" style="margin-top:0">收入</div>'+catRows('income')+
-    '<div class="section-title">支出 · 每日固定</div>'+catRows('expense','recurring')+
-    '<div class="section-title">支出 · 周期性（摊销）</div>'+catRows('expense','periodic')+
-    '<div class="section-title">支出 · 偶发</div>'+catRows('expense','oneoff');
+    '<div class="section-title">支出 · 点下拉切换「每日固定/周期/偶发」</div>'+catRows('expense');
 }
 function addCatDialog(){
   const html='<h3>添加分类</h3>'+
@@ -815,15 +826,25 @@ function doAddCat(){
   if(nature==='periodic')c.periodMonths=Math.max(1,Math.min(12,period));
   state.categories.push(c);saveAll();closeModal(null);render();toast('已添加');
 }
-function catRows(type,nature){
-  const list=catsOf(type,nature);
+function catRows(type){
+  const list=catsOf(type);
   return list.map(c=>{
-    const p=c.nature==='periodic'?'<input type="number" min="1" max="12" value="'+(c.periodMonths||1)+'" title="每N月" style="width:44px;text-align:center;border:1px solid var(--border);border-radius:6px;padding:3px;background:var(--surface);color:var(--ink)" onchange="setCatPeriod(\''+c.id+'\',this.value)"> 月':'';
+    const sel='<select onchange="setCatNature(\''+c.id+'\',this.value)" style="padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink);font-size:12px">'+
+      '<option value="recurring"'+(c.nature==='recurring'?' selected':'')+'>每日固定</option>'+
+      '<option value="periodic"'+(c.nature==='periodic'?' selected':'')+'>周期</option>'+
+      '<option value="oneoff"'+(c.nature==='oneoff'?' selected':'')+'>偶发</option></select>';
+    const p=c.nature==='periodic'?'<input type="number" min="1" max="12" value="'+(c.periodMonths||1)+'" title="每N月" style="width:40px;text-align:center;border:1px solid var(--border);border-radius:6px;padding:3px;background:var(--surface);color:var(--ink)" onchange="setCatPeriod(\''+c.id+'\',this.value)"> 月':'';
     return '<div class="row"><span class="ico">'+c.icon+'</span>'+
-      '<div class="mid"><div class="nm">'+esc(c.name)+'</div><div class="sub">'+NATURE_LABEL[c.nature]+'</div></div>'+
-      p+
+      '<div class="mid"><div class="nm">'+esc(c.name)+'</div></div>'+
+      sel+p+
       '<button class="btn sm danger" onclick="delCat(\''+c.id+'\')">删</button></div>';
   }).join('');
+}
+function setCatNature(id,v){
+  const c=catById(id); if(!c)return;
+  c.nature=v;
+  if(v==='periodic'&&!c.periodMonths)c.periodMonths=1;
+  saveAll();render();toast('已改为 '+NATURE_LABEL[v]);
 }
 function setCatPeriod(id,v){const c=catById(id);if(c){c.periodMonths=Math.max(1,Math.min(12,parseInt(v)||1));saveAll();render();}}
 async function delCat(id){
