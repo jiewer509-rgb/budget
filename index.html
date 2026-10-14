@@ -334,6 +334,7 @@ let state={
   rec:{type:'expense',categoryId:null,amount:'',date:todayStr(),note:'',editId:null},
   statCat:null,     // 统计页下钻的分类 id
   catExpanded:false,
+  catSearch:'',
 };
 
 /* ---------------- 持久化（主库 + 双副本） ---------------- */
@@ -401,6 +402,7 @@ function renderRecord(v){
   const cats=catsOf(rec.type);
   if(!rec.categoryId && cats[0])rec.categoryId=cats[0].id;
   const editing=!!rec.editId;
+  const selectedCat=cats.find(c=>c.id===rec.categoryId);
   v.innerHTML=
     '<div class="topbar"><div><h1>'+(editing?'编辑记录':'记一笔')+'</h1><div class="sub">'+monthLabel(curMonth())+'</div></div>'+gearBtn()+'</div>'+
     '<div class="card">'+
@@ -410,10 +412,15 @@ function renderRecord(v){
       '</div>'+
       '<div class="amount-wrap"><span class="cur">¥</span><input id="amount" type="number" inputmode="decimal" placeholder="0" min="0" step="0.01" value="'+esc(rec.amount)+'" oninput="state.rec.amount=this.value"></div>'+
       '<div class="field" style="justify-content:space-between;margin-bottom:6px"><span style="font-weight:600;color:var(--ink)">分类</span>'+
-        '<button class="btn sm ghost" style="padding:3px 8px" onclick="toggleCat()">'+(state.catExpanded?'收起 ▴':'展开全部 ▾')+'</button></div>'+
+        '<button class="btn sm ghost" style="padding:3px 8px" onclick="toggleCat()">'+(state.catExpanded?'收起 ▴':'选择 ▾')+'</button></div>'+
       (state.catExpanded
-        ? '<div class="cat-grid">'+cats.map(c=>catCell(c,false)).join('')+'</div>'
-        : '<div class="cat-scroll">'+cats.map(c=>catCell(c,true)).join('')+'</div>')+
+        ? '<div class="field" style="margin-bottom:4px"><input type="text" placeholder="搜索分类..." value="'+esc(state.catSearch||'')+'" oninput="state.catSearch=this.value;renderCatGrid()" style="flex:1;border:1px solid var(--border);border-radius:10px;padding:8px 10px;background:var(--surface);color:var(--ink);font-size:14px"></div>'+
+          '<div id="catGrid">'+catGridHTML(cats)+'</div>'
+        : '<div style="display:flex;align-items:center;gap:8px;padding:2px 0 8px">'+
+            '<span style="font-size:22px">'+(selectedCat?selectedCat.icon:'❓')+'</span>'+
+            '<span style="font-weight:600;font-size:15px">'+(selectedCat?esc(selectedCat.name):'请选择分类')+'</span>'+
+            '<span class="badge">'+(selectedCat?natureLabel(selectedCat):'')+'</span>'+
+          '</div>')+
       '<div class="field"><span>日期</span><input type="date" value="'+esc(rec.date)+'" onchange="state.rec.date=this.value"></div>'+
       '<div class="field"><span>备注</span><input type="text" placeholder="选填" value="'+esc(rec.note)+'" oninput="state.rec.note=this.value"></div>'+
       '<button class="save-btn" onclick="saveTx()">'+(editing?'保存修改':'保存')+'</button>'+
@@ -423,12 +430,33 @@ function renderRecord(v){
 }
 
 function setRecType(t){state.rec.type=t;state.rec.categoryId=(catsOf(t)[0]||{}).id;state.rec.editId=null;render();}
-function pickCat(id){state.rec.categoryId=id;render();}
-function toggleCat(){state.catExpanded=!state.catExpanded;render();}
+function pickCat(id){state.rec.categoryId=id;state.catExpanded=false;state.catSearch='';render();}
+function toggleCat(){state.catExpanded=!state.catExpanded;if(!state.catExpanded)state.catSearch='';render();}
 function catCell(c,compact){
   const on=state.rec.categoryId===c.id?' on':'';
   if(compact)return '<div class="chip'+on+'" onclick="pickCat(\''+c.id+'\')"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span></div>';
   return '<div class="cat'+on+'" onclick="pickCat(\''+c.id+'\')"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span><span class="badge">'+natureLabel(c)+'</span></div>';
+}
+function catGridHTML(cats){
+  const isIncome=state.rec.type==='income';
+  const groups=isIncome
+    ? [['recurring','稳定'],['periodic','周期'],['oneoff','偶发']]
+    : [['recurring','每日固定'],['periodic','周期'],['oneoff','偶发']];
+  let html='';
+  groups.forEach(([nature,label])=>{
+    const g=cats.filter(c=>c.nature===nature);
+    if(!g.length)return;
+    html+='<div class="section-title" style="margin:8px 0 4px;font-size:11px">'+label+'</div>'+
+      '<div class="cat-grid" style="margin-bottom:6px">'+g.map(c=>catCell(c,false)).join('')+'</div>';
+  });
+  if(!cats.length)html+='<div class="empty" style="padding:12px">无匹配分类</div>';
+  return html;
+}
+function renderCatGrid(){
+  const el=document.getElementById('catGrid'); if(!el)return;
+  const q=(state.catSearch||'').trim();
+  const cats=catsOf(state.rec.type).filter(c=>!q||c.name.includes(q));
+  el.innerHTML=catGridHTML(cats);
 }
 
 function saveTx(){
