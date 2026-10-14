@@ -501,11 +501,12 @@ function renderRecentList(){
   if(!list.length)html+='<div class="empty">本月还没有记录</div>';
   else html+=list.map(t=>{
     const c=catById(t.categoryId); const nm=c?c.name:'未知';
-    return '<div class="row" onclick="editTx(\''+t.id+'\')">'+
+    return '<div class="row">'+
       '<span class="ico">'+(c?c.icon:'❓')+'</span>'+
       '<div class="mid"><div class="nm">'+esc(nm)+'</div><div class="sub">'+esc(t.date)+' '+(t.note?esc(t.note):'')+'</div></div>'+
       '<div style="text-align:right"><div class="amt '+(t.type==='income'?'in':'out')+'">'+(t.type==='income'?'+':'-')+fmtMoney(t.amount)+'</div>'+
-      (c&&c.nature==='oneoff'?'<span class="badge">偶发</span>':c&&c.nature==='periodic'?'<span class="badge">周期</span>':'')+'</div></div>';
+      (c&&c.nature==='oneoff'?'<span class="badge">偶发</span>':c&&c.nature==='periodic'?'<span class="badge">周期</span>':'')+'</div>'+
+      '<button class="btn sm ghost" style="padding:4px 8px;flex-shrink:0" onclick="editTx(\''+t.id+'\')">修改</button></div>';
   }).join('');
   html+='</div>';
   return html;
