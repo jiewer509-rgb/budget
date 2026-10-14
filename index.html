@@ -245,6 +245,8 @@ const DEFAULT_CATEGORIES = [
   {id:"exp_other", type:"expense", nature:"oneoff", name:"其他偶发", icon:"📦", sort:34},
 ];
 const NATURE_LABEL = {recurring:"每日固定", periodic:"周期性", oneoff:"偶发"};
+const INCOME_LABEL = {recurring:"稳定", periodic:"周期", oneoff:"偶发"};
+function natureLabel(c){return (c&&c.type==='income'?INCOME_LABEL:NATURE_LABEL)[c.nature]||'';}
 
 /* ---------------- 工具函数 ---------------- */
 const $=s=>document.querySelector(s);
@@ -415,7 +417,7 @@ function toggleCat(){state.catExpanded=!state.catExpanded;render();}
 function catCell(c,compact){
   const on=state.rec.categoryId===c.id?' on':'';
   if(compact)return '<div class="chip'+on+'" onclick="pickCat(\''+c.id+'\')"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span></div>';
-  return '<div class="cat'+on+'" onclick="pickCat(\''+c.id+'\')"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span><span class="badge">'+NATURE_LABEL[c.nature]+'</span></div>';
+  return '<div class="cat'+on+'" onclick="pickCat(\''+c.id+'\')"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span><span class="badge">'+natureLabel(c)+'</span></div>';
 }
 
 function saveTx(){
@@ -495,12 +497,10 @@ function renderMonth(v){
     '</div>'+
 
     '<div class="card"><h3>支出分类占比 · 点色块看明细</h3><div id="donut"></div><div id="donutDetail"></div></div>'+
-    '<div class="card"><h3>预算 vs 实际</h3><div id="budgetActual"></div></div>'+
-    '<div class="card"><h3>下月预算建议</h3><div id="budgetSuggest"></div></div>';
+    '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h3 style="margin:0">本月预算</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>';
 
   renderMonthDonut();
   renderBudgetActual();
-  renderBudgetSuggest();
 }
 function shiftStat(d){state.month=shiftMonth(state.month,d);state.statCat=null;render();}
 
@@ -651,36 +651,42 @@ function renderLine(el,labels,vals,color){
 }
 
 /* =========================================================================
- * 预算 vs 实际
+ * 预算 vs 实际（一键填充建议，也可手动改）
  * ========================================================================= */
 function renderBudgetActual(){
   const el=$('#budgetActual'); if(!el)return;
   const m=state.month;
   const budgeted=budgetedCats();
   const items=(state.budgets[m]&&state.budgets[m].items)||{};
-  let overCount=0;
+  let overCount=0, setCount=0;
   const rows=budgeted.map(c=>{
     const b=Number(items[c.id]||0);
+    const sug=Math.round(suggestBudget(c,m));
     const actual=monthExpenseByCat(m,c.id);
     const effectiveActual=(c.nature==='periodic')?periodicAvg(m,c):actual;
     const ratio=b>0?effectiveActual/b:0;
-    const over=ratio>1; if(over)overCount++;
-    const cls=over?'over':(ratio>=0.85?'warn':'');
+    const over=b>0&&ratio>1; if(over)overCount++;
+    if(b>0)setCount++;
+    const cls=over?'over':(b>0&&ratio>=0.85?'warn':'');
     return '<div class="budget-row">'+
       '<div class="br-top"><span class="nm">'+c.icon+' '+esc(c.name)+'</span>'+
-      '<input type="number" min="0" step="1" placeholder="设预算" value="'+(b||'')+'" onchange="setBudget(\''+c.id+'\',this.value)" inputmode="decimal"></div>'+
+      (sug>0?'<span style="font-size:12px;color:var(--muted)">建议 '+fmtMoney(sug)+'</span>':'')+'</div>'+
+      '<div class="br-top" style="margin-bottom:0">'+
+        '<span style="font-size:13px;color:var(--ink-2)">预算</span>'+
+        '<input type="number" min="0" step="1" placeholder="未设" value="'+(b||'')+'" onchange="setBudget(\''+c.id+'\',this.value)" inputmode="decimal">'+
+        '<span style="font-size:13px;color:var(--ink-2);margin-left:8px">实际</span>'+
+        '<span style="font-size:14px;font-weight:700;color:'+(over?'var(--critical)':'var(--ink)')+'">'+fmtMoney(effectiveActual)+'</span>'+
+      '</div>'+
       '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(ratio*100,100)+'%"></div></div>'+
-      '<div class="br-meta"><span>实际 '+fmtMoney(effectiveActual)+'</span><span>预算 '+fmtMoney(b)+'</span>'+(over?'<span style="color:var(--critical);font-weight:700">超支</span>':'')+'</div>'+
+      (over?'<div class="br-meta"><span style="color:var(--critical);font-weight:700">⚠ 超支 '+fmtMoney(effectiveActual-b)+'</span></div>':'')+
     '</div>';
   }).join('');
   el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+
-    (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支</span>':'✅ 全部在预算内')+
-    ' · 改预算自动保存</div>'+rows;
+    (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支</span>':'<span style="color:var(--good);font-weight:700">✅ 未超支</span>')+
+    ' · 已设 '+setCount+'/'+budgeted.length+' 项 · 改预算自动保存</div>'+rows;
 }
 
-/* =========================================================================
- * 下月预算建议（近12个月 P75 分位；周期类摊销）
- * ========================================================================= */
+/* ---------------- 预算建议（近12个月 P75；周期类摊销） ---------------- */
 function suggestBudget(cat, refMonth){
   let total=0, months=0;
   for(let i=1;i<=12;i++){ total+=monthExpenseByCat(shiftMonth(refMonth,-i),cat.id); months++; }
@@ -691,31 +697,14 @@ function suggestBudget(cat, refMonth){
   if(!sorted.length) return total/months;
   return sorted[Math.min(sorted.length-1, Math.floor(sorted.length*0.75))];
 }
-function renderBudgetSuggest(){
-  const el=$('#budgetSuggest'); if(!el)return;
-  const next=shiftMonth(state.month,1);
-  const rows=budgetedCats().map(c=>({c, sug:suggestBudget(c,state.month)}));
-  if(!rows.some(r=>r.sug>0)){el.innerHTML='<div class="empty">历史数据不足，记满几个月后会给出建议</div>';return;}
-  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">按近12个月 P75 分位（周期类摊销）估算，填入 '+monthLabel(next)+' 预算</div>'+
-    rows.map(r=>{
-      if(r.sug<=0)return '';
-      const sug=Math.round(r.sug);
-      return '<div class="ref-row"><span class="nm">'+r.c.icon+' '+esc(r.c.name)+'</span>'+
-        '<span class="v">建议 '+fmtMoney(sug)+'</span>'+
-        '<button class="btn sm primary" onclick="applySuggestion(\''+r.c.id+'\','+sug+')">填入</button></div>';
-    }).join('')+
-    '<button class="btn sm" style="width:100%;margin-top:8px" onclick="applyAllSuggestions()">一键填入全部</button>';
-}
-function applySuggestion(catId,val){
-  const next=shiftMonth(state.month,1);
-  if(!state.budgets[next])state.budgets[next]={items:{}};
-  state.budgets[next].items[catId]=val;
-  saveAll();render();toast('已填入 '+monthLabel(next));
-}
-function applyAllSuggestions(){
-  const next=shiftMonth(state.month,1);
-  budgetedCats().forEach(c=>{const s=suggestBudget(c,state.month); if(s>0){if(!state.budgets[next])state.budgets[next]={items:{}}; state.budgets[next].items[c.id]=Math.round(s);}});
-  saveAll();render();toast('已填入全部建议');
+function fillBudgetFromSuggest(){
+  const m=state.month;
+  let n=0;
+  budgetedCats().forEach(c=>{
+    const s=suggestBudget(c,m);
+    if(s>0){if(!state.budgets[m])state.budgets[m]={items:{}}; state.budgets[m].items[c.id]=Math.round(s); n++;}
+  });
+  saveAll();render();toast('已为 '+monthLabel(m)+' 填充 '+n+' 项建议预算');
 }
 function setBudget(catId,val){
   const m=state.month;const v=parseFloat(val)||0;
@@ -829,10 +818,11 @@ function doAddCat(){
 function catRows(type){
   const list=catsOf(type);
   return list.map(c=>{
+    const opts=type==='income'
+      ? [['recurring','稳定'],['periodic','周期'],['oneoff','偶发']]
+      : [['recurring','每日固定'],['periodic','周期'],['oneoff','偶发']];
     const sel='<select onchange="setCatNature(\''+c.id+'\',this.value)" style="padding:5px 8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--ink);font-size:12px">'+
-      '<option value="recurring"'+(c.nature==='recurring'?' selected':'')+'>每日固定</option>'+
-      '<option value="periodic"'+(c.nature==='periodic'?' selected':'')+'>周期</option>'+
-      '<option value="oneoff"'+(c.nature==='oneoff'?' selected':'')+'>偶发</option></select>';
+      opts.map(([v,l])=>'<option value="'+v+'"'+(c.nature===v?' selected':'')+'>'+l+'</option>').join('')+'</select>';
     const p=c.nature==='periodic'?'<input type="number" min="1" max="12" value="'+(c.periodMonths||1)+'" title="每N月" style="width:40px;text-align:center;border:1px solid var(--border);border-radius:6px;padding:3px;background:var(--surface);color:var(--ink)" onchange="setCatPeriod(\''+c.id+'\',this.value)"> 月':'';
     return '<div class="row"><span class="ico">'+c.icon+'</span>'+
       '<div class="mid"><div class="nm">'+esc(c.name)+'</div></div>'+
