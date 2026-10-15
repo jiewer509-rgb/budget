@@ -257,6 +257,7 @@ const DEFAULT_CATEGORIES = [
 const NATURE_LABEL = {recurring:"每日固定", periodic:"周期性", oneoff:"偶发"};
 const INCOME_LABEL = {recurring:"稳定", periodic:"周期", oneoff:"偶发"};
 function natureLabel(c){return (c&&c.type==='income'?INCOME_LABEL:NATURE_LABEL)[c.nature]||'';}
+const DEFAULT_FIXED = {'乖乖':200, '房租':2450, '房屋杂费':200};
 
 /* ---------------- 工具函数 ---------------- */
 const $=s=>document.querySelector(s);
@@ -335,6 +336,7 @@ let state={
   statCat:null,     // 统计页下钻的分类 id
   catExpanded:false,
   catSearch:'',
+  searchQuery:'',
 };
 
 /* ---------------- 持久化（主库 + 双副本） ---------------- */
@@ -385,6 +387,7 @@ function render(){
   else if(state.view==='month')renderMonth(v);
   else if(state.view==='budget')renderBudgetPage(v);
   else if(state.view==='trend')renderTrend(v);
+  else if(state.view==='search')renderSearch(v);
   else if(state.view==='settings')renderSettings(v);
 }
 function renderTabbar(){
@@ -392,7 +395,7 @@ function renderTabbar(){
   $('#tabbar').innerHTML=tabs.map(([k,n,i])=>'<button class="'+(state.view===k?'on':'')+'" onclick="go(\''+k+'\')"><span class="ti">'+i+'</span>'+n+'</button>').join('');
 }
 function go(k){state.view=k;state.statCat=null;render();window.scrollTo(0,0);}
-function gearBtn(){return '<button class="btn sm ghost" style="padding:4px 8px;font-size:18px" onclick="go(\'settings\')">⚙️</button>';}
+function gearBtn(){return '<button class="btn sm ghost" style="padding:4px 8px;font-size:16px" onclick="go(\'search\')">🔍</button><button class="btn sm ghost" style="padding:4px 8px;font-size:18px" onclick="go(\'settings\')">⚙️</button>';}
 
 /* =========================================================================
  * 记账页
@@ -702,8 +705,10 @@ function renderBudgetPage(v){
     '<div class="banner" style="border-color:var(--brand);border-left-color:var(--brand)">'+
       '<b>预算标准：</b>税后月收入 <b>¥8500</b> · 每月存款 <b>≥¥1500</b> · 可支出预算 <b>≤¥7000</b>。<br>建议按近<b>3年</b>支出估算：每日固定类取 <b>P75 分位</b>，周期类取<b>摊销月均</b>，偶发不摊入预算。'+
     '</div>'+
-    '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">预算 vs 实际</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>';
+    '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">预算 vs 实际</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>'+
+    '<div class="card"><h3>固定预算（填充时优先用这些值）</h3><div id="fixedBudgets"></div></div>';
   renderBudgetActual();
+  renderFixedBudgets();
 }
 
 function renderBudgetActual(){
@@ -738,7 +743,7 @@ function renderBudgetActual(){
       rows.map(r=>{
         const cls=r.over?'over':(r.b>0&&r.ratio>=0.85?'warn':'');
         return '<div class="btile '+cls+'" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
-          '<div class="tn">'+r.c.icon+' '+esc(r.c.name)+(r.over?' <span style="color:var(--critical)">超支</span>':'')+'</div>'+
+          '<div class="tn">'+r.c.icon+' '+esc(r.c.name)+(state.meta.fixedBudgets&&state.meta.fixedBudgets[r.c.name]?' <span class="badge" style="font-size:9px">固定</span>':'')+(r.over?' <span style="color:var(--critical)">超支</span>':'')+'</div>'+
           '<div class="tv">'+fmtMoney(r.effectiveActual)+'<span class="b"> / '+fmtMoney(r.b)+'</span></div>'+
           '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(r.ratio*100,100)+'%"></div></div>'+
         '</div>';
@@ -787,10 +792,27 @@ function fillBudgetFromSuggest(){
   const m=state.month;
   let n=0;
   budgetedCats().forEach(c=>{
-    const s=suggestBudget(c,m);
+    const fb=state.meta.fixedBudgets&&state.meta.fixedBudgets[c.name];
+    const s=fb||suggestBudget(c,m);
     if(s>0){if(!state.budgets[m])state.budgets[m]={items:{}}; state.budgets[m].items[c.id]=Math.round(s); n++;}
   });
-  saveAll();render();toast('已为 '+monthLabel(m)+' 填充 '+n+' 项建议预算');
+  saveAll();render();toast('已为 '+monthLabel(m)+' 填充 '+n+' 项预算（含固定预算）');
+}
+function renderFixedBudgets(){
+  const el=$('#fixedBudgets'); if(!el)return;
+  const fb=state.meta.fixedBudgets||{};
+  const entries=Object.entries(fb);
+  if(!entries.length){el.innerHTML='<div class="empty">暂无固定预算</div>';return;}
+  el.innerHTML=entries.map(([name,val])=>
+    '<div class="kv"><span class="k">'+esc(name)+'</span>'+
+    '<input type="number" min="0" step="1" value="'+val+'" onchange="setFixedBudget(\''+name+'\',this.value)" style="width:100px;text-align:right;border:1px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--surface);color:var(--ink);font-size:14px"></div>'
+  ).join('');
+}
+function setFixedBudget(name,val){
+  state.meta.fixedBudgets=state.meta.fixedBudgets||{};
+  const v=parseFloat(val)||0;
+  if(v>0)state.meta.fixedBudgets[name]=v; else delete state.meta.fixedBudgets[name];
+  saveAll();
 }
 function setBudget(catId,val){
   const m=state.month;const v=parseFloat(val)||0;
@@ -975,6 +997,40 @@ function importModeDialog(data){
 }
 
 /* =========================================================================
+ * 搜索历史记录
+ * ========================================================================= */
+function renderSearch(v){
+  v.innerHTML=
+    '<div class="topbar"><div><h1>搜索记录</h1><div class="sub">全部历史</div></div>'+gearBtn()+'</div>'+
+    '<div class="card"><input type="text" placeholder="搜索备注/分类/金额/日期..." value="'+esc(state.searchQuery||'')+'" oninput="state.searchQuery=this.value;renderSearchResults()" style="width:100%;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--surface);color:var(--ink);font-size:15px"></div>'+
+    '<div id="searchResults"></div>';
+  renderSearchResults();
+}
+function searchTxs(q){
+  if(!q)return[];
+  q=q.toLowerCase();
+  return state.transactions.filter(t=>!t.deletedAt).filter(t=>{
+    const c=catById(t.categoryId);
+    return (t.note||'').toLowerCase().includes(q)||(c&&c.name.toLowerCase().includes(q))||t.date.includes(q)||String(t.amount).includes(q);
+  }).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,200);
+}
+function renderSearchResults(){
+  const el=$('#searchResults'); if(!el)return;
+  const q=(state.searchQuery||'').trim();
+  if(!q){el.innerHTML='<div class="empty">输入关键字搜索全部历史记录</div>';return;}
+  const list=searchTxs(q);
+  if(!list.length){el.innerHTML='<div class="empty">无匹配记录</div>';return;}
+  el.innerHTML='<div class="card"><h3>'+list.length+' 条结果'+(list.length===200?'（最多显示200）':'')+'</h3>'+list.map(t=>{
+    const c=catById(t.categoryId);
+    return '<div class="row">'+
+      '<span class="ico">'+(c?c.icon:'❓')+'</span>'+
+      '<div class="mid"><div class="nm">'+(c?esc(c.name):'未知')+'</div><div class="sub">'+esc(t.date)+' '+(t.note?esc(t.note):'')+'</div></div>'+
+      '<div class="amt '+(t.type==='income'?'in':'out')+'">'+(t.type==='income'?'+':'-')+fmtMoney(t.amount)+'</div>'+
+      '<button class="btn sm ghost" style="padding:4px 8px;flex-shrink:0" onclick="editTx(\''+t.id+'\')">修改</button></div>';
+  }).join('')+'</div>';
+}
+
+/* =========================================================================
  * 初始化
  * ========================================================================= */
 async function init(){
@@ -989,7 +1045,7 @@ async function init(){
   state.categories=cats||[];
   state.transactions=tx||[];
   state.budgets=budgets||{};
-  state.meta=Object.assign({lastExportAt:null,remindDays:14},meta||{});
+  state.meta=Object.assign({lastExportAt:null,remindDays:14,fixedBudgets:{...DEFAULT_FIXED}},meta||{});
   state.rec.categoryId=(catsOf('expense')[0]||{}).id;
   render();
 }
