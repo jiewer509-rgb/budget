@@ -375,6 +375,7 @@ function saveAll(){
 /* ---------------- 分类工具 ---------------- */
 function catById(id){return state.categories.find(c=>c.id===id);}
 function catsOf(type,nature){return state.categories.filter(c=>c.type===type&&(!nature||c.nature===nature)).sort((a,b)=>a.sort-b.sort);}
+function activeCats(type,nature){return catsOf(type,nature).filter(c=>!c.retired);}
 function budgetedCats(){return state.categories.filter(c=>c.type==='expense'&&c.nature!=='oneoff').sort((a,b)=>a.sort-b.sort);}
 function oneoffCats(){return state.categories.filter(c=>c.type==='expense'&&c.nature==='oneoff').sort((a,b)=>a.sort-b.sort);}
 
@@ -414,7 +415,7 @@ function gearBtn(){return '<button class="btn sm ghost" style="padding:4px 8px;f
  * ========================================================================= */
 function renderRecord(v){
   const rec=state.rec;
-  const cats=catsOf(rec.type);
+  const cats=activeCats(rec.type);
   if(!rec.categoryId && cats[0])rec.categoryId=cats[0].id;
   const editing=!!rec.editId;
   const selectedCat=cats.find(c=>c.id===rec.categoryId);
@@ -444,7 +445,7 @@ function renderRecord(v){
     renderRecentList();
 }
 
-function setRecType(t){state.rec.type=t;state.rec.categoryId=(catsOf(t)[0]||{}).id;state.rec.editId=null;render();}
+function setRecType(t){state.rec.type=t;state.rec.categoryId=(activeCats(t)[0]||{}).id;state.rec.editId=null;render();}
 function pickCat(id){state.rec.categoryId=id;state.catExpanded=false;state.catSearch='';render();}
 function toggleCat(){state.catExpanded=!state.catExpanded;if(!state.catExpanded)state.catSearch='';render();}
 function catCell(c,compact){
@@ -470,7 +471,7 @@ function catGridHTML(cats){
 function renderCatGrid(){
   const el=document.getElementById('catGrid'); if(!el)return;
   const q=(state.catSearch||'').trim();
-  const cats=catsOf(state.rec.type).filter(c=>!q||c.name.includes(q));
+  const cats=activeCats(state.rec.type).filter(c=>!q||c.name.includes(q));
   el.innerHTML=catGridHTML(cats);
 }
 
@@ -984,7 +985,7 @@ function catRows(type){
       opts.map(([v,l])=>'<option value="'+v+'"'+(c.nature===v?' selected':'')+'>'+l+'</option>').join('')+'</select>';
     const p=c.nature==='periodic'?'<input type="number" min="1" max="12" value="'+(c.periodMonths||1)+'" title="每N月" style="width:40px;text-align:center;border:1px solid var(--border);border-radius:6px;padding:3px;background:var(--surface);color:var(--ink)" onchange="setCatPeriod(\''+c.id+'\',this.value)"> 月':'';
     return '<div class="row"><span class="ico">'+c.icon+'</span>'+
-      '<div class="mid"><div class="nm">'+esc(c.name)+'</div></div>'+
+      '<div class="mid"><div class="nm">'+esc(c.name)+(c.retired?' <span class="badge">历史</span>':'')+'</div></div>'+
       sel+p+
       '<button class="btn sm danger" onclick="delCat(\''+c.id+'\')">删</button></div>';
   }).join('');
