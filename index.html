@@ -277,6 +277,7 @@ const INCOME_LABEL = {recurring:"稳定", periodic:"周期", oneoff:"偶发"};
 function natureLabel(c){return (c&&c.type==='income'?INCOME_LABEL:NATURE_LABEL)[c.nature]||'';}
 const DEFAULT_FIXED = {'乖乖':200, '房租':2450, '房屋杂费':200, '用餐':900, '食材':420, '日用品':200, '交通':160, '订阅费':180, '通讯':70, '零食':170};
 const ARCHIVE_BEFORE = '2023-01'; // 2023年以前的数据算历史归档，不参与预算计算
+const AMORTIZE_FROM = '2026-09'; // 2026-09 起，周期性支出的当月金额按摊销计算（周期内总金额/周期时长）
 
 /* ---------------- 工具函数 ---------------- */
 const $=s=>document.querySelector(s);
@@ -391,7 +392,15 @@ function txInMonth(m){return state.transactions.filter(t=>!t.deletedAt&&t.date&&
 function sumOf(list,type){return list.filter(t=>t.type===type).reduce((s,t)=>s+Number(t.amount||0),0);}
 function catSum(list,catId){return list.filter(t=>t.categoryId===catId).reduce((s,t)=>s+Number(t.amount||0),0);}
 function monthIncome(m){return sumOf(txInMonth(m),'income');}
-function monthExpense(m){return sumOf(txInMonth(m),'expense');}
+function effExpByCat(m,catId){
+  const c=catById(catId);
+  if(c&&c.nature==='periodic'&&m>=AMORTIZE_FROM)return periodicAvg(m,c);
+  return monthExpenseByCat(m,catId);
+}
+function monthExpense(m){
+  if(m<AMORTIZE_FROM)return sumOf(txInMonth(m),'expense');
+  return state.categories.filter(c=>c.type==='expense').reduce((s,c)=>s+effExpByCat(m,c.id),0);
+}
 function monthExpenseByCat(m,catId){return catSum(txInMonth(m),catId);}
 function periodicAvg(m,cat){const P=cat.periodMonths||1;let total=0;
   for(let i=0;i<P;i++)total+=monthExpenseByCat(shiftMonth(m,-i),cat.id);
@@ -649,12 +658,24 @@ function aggregateByCat(txs){
 function natureShort(type,nature){return (type==='income'?INCOME_LABEL:NATURE_LABEL)[nature]||'';}
 function renderMonthDonut(){
   const el=$('#donut'); if(!el)return;
-  const txs=txInMonth(state.month).filter(t=>t.type==='expense');
-  if(!txs.length){el.innerHTML='<div class="empty">本月暂无支出</div>';return;}
-  const shown=aggregateByCat(txs);
+  const m=state.month;
+  const txs=txInMonth(m).filter(t=>t.type==='expense');
+  const shown=[];
+  state.categories.filter(c=>c.type==='expense').forEach(c=>{
+    const v=effExpByCat(m,c.id);
+    if(v>0)shown.push({id:c.id,name:c.name,value:v,type:'expense',nature:c.nature,icon:c.icon});
+  });
+  const natureOrder={recurring:0,periodic:1,oneoff:2};
+  shown.sort((a,b)=>(natureOrder[a.nature]-natureOrder[b.nature])||(b.value-a.value));
+  shown.forEach((it,i)=>it.color='hsl('+Math.round((i*137.508)%360)+', 60%, 46%)');
+  if(!shown.length){el.innerHTML='<div class="empty">本月暂无支出</div>';return;}
   const total=shown.reduce((s,x)=>s+x.value,0);
   el.innerHTML=donutSVG(shown,total,'本月支出');
-  bindDonutTap(el, shown, it=>showTxDetail(it, txs));
+  bindDonutTap(el, shown, it=>{
+    const c=catById(it.id);
+    const list=(c&&c.nature==='periodic')?state.transactions.filter(t=>!t.deletedAt&&t.type==='expense'&&t.categoryId===it.id):txs;
+    showTxDetail(it, list);
+  });
 }
 function renderAnnualDonut(){
   const el=$('#annualDonut'); if(!el)return;
