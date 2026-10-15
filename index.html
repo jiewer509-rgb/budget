@@ -591,8 +591,9 @@ function bindDonutTap(el, items, onTap){
 function aggregateByCat(txs){
   const by={};txs.forEach(t=>{by[t.categoryId]=(by[t.categoryId]||0)+Number(t.amount||0);});
   let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val,nature:c?c.nature:'oneoff',icon:c?c.icon:'❓'};});
-  items.sort((a,b)=>b.value-a.value);
-  // 展示全部具体分类，不合并"其他"；颜色用黄金角均匀取色
+  const natureOrder={recurring:0,periodic:1,oneoff:2};
+  items.sort((a,b)=>(natureOrder[a.nature]-natureOrder[b.nature])||(b.value-a.value));
+  // 先按性质分组（固定/周期/偶发），组内按金额降序；颜色用黄金角均匀取色
   return items.map((it,i)=>({...it,color:'hsl('+Math.round((i*137.508)%360)+', 60%, 46%)'}));
 }
 function natureShort(nature){return {recurring:'固定',periodic:'周期',oneoff:'偶发'}[nature]||'';}
@@ -699,7 +700,7 @@ function renderBudgetPage(v){
       gearBtn()+
     '</div></div>'+
     '<div class="banner" style="border-color:var(--brand);border-left-color:var(--brand)">'+
-      '<b>预算怎么算的？</b> 每日固定类取近12个月 <b>P75 分位</b>（75% 的月份花得比这少）；周期类取近12个月<b>摊销月均</b>；偶发不摊入预算。点分类名可看每笔明细。'+
+      '<b>预算标准：</b>税后月收入 <b>¥8500</b> · 每月存款 <b>≥¥1500</b> · 可支出预算 <b>≤¥7000</b>。<br>建议按近<b>3年</b>支出估算：每日固定类取 <b>P75 分位</b>，周期类取<b>摊销月均</b>，偶发不摊入预算。'+
     '</div>'+
     '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">预算 vs 实际</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>';
   renderBudgetActual();
@@ -723,7 +724,7 @@ function renderBudgetActual(){
       const over=b>0&&ratio>1;
       return {c,b,effectiveActual,ratio,over,overshoot:over?effectiveActual-b:0};
     });
-    rows.sort((a,b)=>(b.over-a.over)||(b.overshoot-a.overshoot)||(b.effectiveActual-a.effectiveActual));
+    rows.sort((a,b)=>b.effectiveActual-a.effectiveActual);
     if(nature==='oneoff'){
       html+='<div class="section-title">'+label+'</div><div class="budget-grid">'+
         rows.map(r=>'<div class="btile" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
@@ -743,9 +744,11 @@ function renderBudgetActual(){
         '</div>';
       }).join('')+'</div>';
   });
+  const budgetedIds=state.categories.filter(c=>c.type==='expense'&&c.nature!=='oneoff').map(c=>c.id);
+  const totalBudget=budgetedIds.reduce((s,id)=>s+Number(items[id]||0),0);
   el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+
     (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支</span>':'<span style="color:var(--good);font-weight:700">✅ 未超支</span>')+
-    ' · 已设 '+setCount+' 项 · 点卡片看明细/改预算</div>'+html;
+    ' · 已设 '+setCount+' 项 · 合计 '+fmtMoney(totalBudget)+'/¥7000 · 点卡片看明细/改预算</div>'+html;
 }
 
 function showBudgetDetail(catId){
@@ -770,11 +773,12 @@ function saveBudgetFromModal(catId){
 
 /* ---------------- 预算建议（近12个月 P75；周期类摊销） ---------------- */
 function suggestBudget(cat, refMonth){
+  const WINDOW=36; // 近三年
   let total=0, months=0;
-  for(let i=1;i<=12;i++){ total+=monthExpenseByCat(shiftMonth(refMonth,-i),cat.id); months++; }
+  for(let i=1;i<=WINDOW;i++){ total+=monthExpenseByCat(shiftMonth(refMonth,-i),cat.id); months++; }
   if(cat.nature==='periodic') return total/months; // 周期类摊销到月
   const vals=[];
-  for(let i=1;i<=12;i++) vals.push(monthExpenseByCat(shiftMonth(refMonth,-i),cat.id));
+  for(let i=1;i<=WINDOW;i++) vals.push(monthExpenseByCat(shiftMonth(refMonth,-i),cat.id));
   const sorted=vals.filter(v=>v>0).sort((a,b)=>a-b);
   if(!sorted.length) return total/months;
   return sorted[Math.min(sorted.length-1, Math.floor(sorted.length*0.75))];
