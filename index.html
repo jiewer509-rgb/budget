@@ -539,8 +539,10 @@ function renderMonth(v){
       '<div class="tile"><div class="lb">偶发支出</div><div class="vl expense">'+fmtMoney(oneoffSum)+'</div><div class="dl">不摊入预算</div></div>'+
     '</div>'+
 
-    '<div class="card"><h3>支出分类占比 · 点色块看明细</h3><div id="donut"></div></div>';
+    '<div class="card"><h3>收入分类 · 点色块看明细</h3><div id="incomeDonut"></div></div>'+
+    '<div class="card"><h3>支出分类 · 点色块看明细</h3><div id="donut"></div></div>';
 
+  renderMonthIncomeDonut();
   renderMonthDonut();
 }
 function shiftStat(d){state.month=shiftMonth(state.month,d);state.statCat=null;render();}
@@ -560,9 +562,11 @@ function renderTrend(v){
         '<div class="tile"><div class="lb">年度支出</div><div class="vl expense">'+fmtMoney(yExp)+'</div></div>'+
       '</div>'+
       '<div class="tile" style="margin-bottom:10px"><div class="lb">年度结余</div><div class="vl '+(yInc-yExp>=0?'income':'expense')+'">'+fmtMoney(yInc-yExp)+'</div></div>'+
-      '<div id="annualDonut"></div>'+
+      '<div class="section-title" style="margin:14px 0 4px">收入分类</div><div id="annualIncomeDonut"></div>'+
+      '<div class="section-title" style="margin:14px 0 4px">支出分类</div><div id="annualDonut"></div>'+
     '</div>';
   renderBars();
+  renderAnnualIncomeDonut();
   renderAnnualDonut();
 }
 
@@ -580,7 +584,7 @@ function donutSVG(items, total, centerLabel){
     '<g transform="rotate(-90 '+cx+' '+cy+')">'+segs+'</g>'+
     '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" class="donut-center">'+fmtMoney(total)+'</text>'+
     '<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="donut-cap">'+centerLabel+'</text></svg>'+
-    '<div class="legend">'+items.map((it,i)=>'<div class="lg" data-i="'+i+'" style="cursor:pointer"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.name)+' <span class="badge" style="font-size:9px">'+natureShort(it.nature)+'</span> '+fmtNum(it.value)+'</div>').join('')+'</div></div>';
+    '<div class="legend">'+items.map((it,i)=>'<div class="lg" data-i="'+i+'" style="cursor:pointer"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.name)+' <span class="badge" style="font-size:9px">'+natureShort(it.type,it.nature)+'</span> '+fmtNum(it.value)+'</div>').join('')+'</div></div>';
 }
 function bindDonutTap(el, items, onTap){
   el.querySelectorAll('[data-i]').forEach(n=>{
@@ -593,13 +597,13 @@ function bindDonutTap(el, items, onTap){
 }
 function aggregateByCat(txs){
   const by={};txs.forEach(t=>{by[t.categoryId]=(by[t.categoryId]||0)+Number(t.amount||0);});
-  let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val,nature:c?c.nature:'oneoff',icon:c?c.icon:'❓'};});
+  let items=Object.entries(by).map(([cid,val])=>{const c=catById(cid);return{id:cid,name:c?c.name:cid,value:val,type:c?c.type:'expense',nature:c?c.nature:'oneoff',icon:c?c.icon:'❓'};});
   const natureOrder={recurring:0,periodic:1,oneoff:2};
   items.sort((a,b)=>(natureOrder[a.nature]-natureOrder[b.nature])||(b.value-a.value));
-  // 先按性质分组（固定/周期/偶发），组内按金额降序；颜色用黄金角均匀取色
+  // 先按性质分组（收入:稳定/周期/偶发，支出:固定/周期/偶发），组内按金额降序；颜色用黄金角均匀取色
   return items.map((it,i)=>({...it,color:'hsl('+Math.round((i*137.508)%360)+', 60%, 46%)'}));
 }
-function natureShort(nature){return {recurring:'固定',periodic:'周期',oneoff:'偶发'}[nature]||'';}
+function natureShort(type,nature){return (type==='income'?INCOME_LABEL:NATURE_LABEL)[nature]||'';}
 function renderMonthDonut(){
   const el=$('#donut'); if(!el)return;
   const txs=txInMonth(state.month).filter(t=>t.type==='expense');
@@ -619,12 +623,32 @@ function renderAnnualDonut(){
   el.innerHTML=donutSVG(shown,total,'年度支出');
   bindDonutTap(el, shown, it=>showTxDetail(it, txs));
 }
+function renderMonthIncomeDonut(){
+  const el=$('#incomeDonut'); if(!el)return;
+  const txs=txInMonth(state.month).filter(t=>t.type==='income');
+  if(!txs.length){el.innerHTML='<div class="empty">本月暂无收入</div>';return;}
+  const shown=aggregateByCat(txs);
+  const total=shown.reduce((s,x)=>s+x.value,0);
+  el.innerHTML=donutSVG(shown,total,'本月收入');
+  bindDonutTap(el, shown, it=>showTxDetail(it, txs));
+}
+function renderAnnualIncomeDonut(){
+  const el=$('#annualIncomeDonut'); if(!el)return;
+  const y=state.month.split('-')[0];
+  const txs=state.transactions.filter(t=>!t.deletedAt&&t.type==='income'&&t.date.startsWith(y));
+  if(!txs.length){el.innerHTML='<div class="empty">本年度暂无收入</div>';return;}
+  const shown=aggregateByCat(txs);
+  const total=shown.reduce((s,x)=>s+x.value,0);
+  el.innerHTML=donutSVG(shown,total,'年度收入');
+  bindDonutTap(el, shown, it=>showTxDetail(it, txs));
+}
 function showTxDetail(it, allTxs){
   if(!it)return;
+  const isInc=it.type==='income';
   const list=allTxs.filter(t=>t.categoryId===it.id).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,200);
   const total=list.reduce((s,t)=>s+Number(t.amount||0),0);
   modal('<h3>'+esc(it.name)+'</h3><p>共 '+list.length+' 笔 · 合计 '+fmtMoney(total)+'</p>'+
-    (list.length?list.map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">无记录</div>')+
+    (list.length?list.map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt '+(isInc?'in':'out')+'">'+(isInc?'+':'-')+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">无记录</div>')+
     '<div class="mrow"><button class="btn" onclick="closeModal(null)">关闭</button></div>');
 }
 
@@ -706,7 +730,10 @@ function renderBudgetPage(v){
       '<b>预算标准：</b>税后月收入 <b>¥8500</b> · 每月存款 <b>≥¥1500</b> · 可支出预算 <b>≤¥7000</b>。<br>建议按近<b>3年</b>支出估算：每日固定类取 <b>P75 分位</b>，周期类取<b>摊销月均</b>，偶发不摊入预算。'+
     '</div>'+
     '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">预算 vs 实际</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>'+
-    '<div class="card"><h3>固定预算（填充时优先用这些值）</h3><div id="fixedBudgets"></div></div>';
+    '<div class="card"><h3>固定预算（填充时优先用这些值）</h3><div id="fixedBudgets"></div></div>'+
+    '<div class="card"><h3>预算计算逻辑（备注）</h3>'+
+      '<textarea id="budgetNote" placeholder="在此备注各分类预算的计算逻辑，例如：日用品 200 = 洗发水22 + 沐浴露33 + 洗衣液6 + 卫生巾棉条42 + 纸巾20 + 精华粉底液50 + 其他25" oninput="state.meta.budgetNote=this.value;saveAll()" style="width:100%;min-height:110px;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--surface);color:var(--ink);font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;display:block">'+esc(state.meta.budgetNote||'')+'</textarea>'+
+    '</div>';
   renderBudgetActual();
   renderFixedBudgets();
 }
@@ -763,7 +790,7 @@ function showBudgetDetail(catId){
   const txs=txInMonth(m).filter(t=>t.type==='expense'&&t.categoryId===catId).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt));
   const total=txs.reduce((s,t)=>s+Number(t.amount||0),0);
   modal('<h3>'+c.icon+' '+esc(c.name)+'</h3>'+
-    (c.nature!=='oneoff'?'<div class="field"><span>预算</span><input type="number" id="bd_input" min="0" step="1" placeholder="未设" value="'+(b||'')+'" inputmode="decimal"></div>':'')+
+    (c.nature!=='oneoff'?'<div class="field"><span>预算</span><input type="number" id="bd_input" min="0" step="1" placeholder="未设" value="'+(b||(state.meta.fixedBudgets&&state.meta.fixedBudgets[c.name])||'')+'" inputmode="decimal"></div>':'')+
     '<p>'+monthLabel(m)+' · 共 '+txs.length+' 笔 · 合计 '+fmtMoney(total)+'</p>'+
     (txs.length?txs.slice(0,200).map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">本月无记录</div>')+
     '<div class="mrow"><button class="btn" onclick="closeModal(null)">取消</button>'+
