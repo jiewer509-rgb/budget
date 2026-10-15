@@ -276,6 +276,7 @@ const NATURE_LABEL = {recurring:"每日固定", periodic:"周期性", oneoff:"�
 const INCOME_LABEL = {recurring:"稳定", periodic:"周期", oneoff:"偶发"};
 function natureLabel(c){return (c&&c.type==='income'?INCOME_LABEL:NATURE_LABEL)[c.nature]||'';}
 const DEFAULT_FIXED = {'乖乖':200, '房租':2450, '房屋杂费':200, '用餐':900, '食材':420, '日用品':200, '交通':160, '订阅费':180, '通讯':70, '零食':170};
+const ARCHIVE_BEFORE = '2023-01'; // 2023年以前的数据算历史归档，不参与预算计算
 
 /* ---------------- 工具函数 ---------------- */
 const $=s=>document.querySelector(s);
@@ -853,12 +854,17 @@ function saveBudgetFromModal(catId){
 
 /* ---------------- 预算建议（近12个月 P75；周期类摊销） ---------------- */
 function suggestBudget(cat, refMonth){
-  const WINDOW=36; // 近三年
+  // 只统计 2023-01 及以后（2023年以前算历史归档，不参与预算）
   let total=0, months=0;
-  for(let i=1;i<=WINDOW;i++){ total+=monthExpenseByCat(shiftMonth(refMonth,-i),cat.id); months++; }
-  if(cat.nature==='periodic') return total/months; // 周期类摊销到月
   const vals=[];
-  for(let i=1;i<=WINDOW;i++) vals.push(monthExpenseByCat(shiftMonth(refMonth,-i),cat.id));
+  for(let i=1;;i++){
+    const mm=shiftMonth(refMonth,-i);
+    if(mm<ARCHIVE_BEFORE) break;
+    const v=monthExpenseByCat(mm,cat.id);
+    total+=v; months++; vals.push(v);
+  }
+  if(!months) return 0;
+  if(cat.nature==='periodic') return total/months; // 周期类摊销到月
   const sorted=vals.filter(v=>v>0).sort((a,b)=>a-b);
   if(!sorted.length) return total/months;
   return sorted[Math.min(sorted.length-1, Math.floor(sorted.length*0.75))];
@@ -1089,7 +1095,7 @@ function renderSearchResults(){
     const c=catById(t.categoryId);
     return '<div class="row">'+
       '<span class="ico">'+(c?c.icon:'❓')+'</span>'+
-      '<div class="mid"><div class="nm">'+(c?esc(c.name):'未知')+'</div><div class="sub">'+esc(t.date)+' '+(t.note?esc(t.note):'')+'</div></div>'+
+      '<div class="mid"><div class="nm">'+(c?esc(c.name):'未知')+'</div><div class="sub">'+esc(t.date)+(t.date<ARCHIVE_BEFORE?' <span class="badge">历史</span>':'')+' '+(t.note?esc(t.note):'')+'</div></div>'+
       '<div class="amt '+(t.type==='income'?'in':'out')+'">'+(t.type==='income'?'+':'-')+fmtMoney(t.amount)+'</div>'+
       '<button class="btn sm ghost" style="padding:4px 8px;flex-shrink:0" onclick="editTx(\''+t.id+'\')">修改</button></div>';
   }).join('')+'</div>';
