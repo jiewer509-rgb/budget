@@ -160,6 +160,12 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .btile.over{border-color:var(--critical)}
 .btile.over .tv{color:var(--critical)}
 .btile.warn{border-color:var(--warn)}
+.oo-list{display:flex;flex-direction:column;margin-top:2px}
+.oo-row{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line);cursor:pointer}
+.oo-row:last-child{border-bottom:none}
+.oo-row .ico{font-size:16px;width:22px;text-align:center;flex-shrink:0}
+.oo-row .nm{flex:1;font-size:13px;color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oo-row .amt{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--expense)}
 
 /* ===== 图表 ===== */
 .chart{margin:6px 0}
@@ -771,7 +777,7 @@ function renderBudgetActual(){
   const m=state.month;
   const items=(state.budgets[m]&&state.budgets[m].items)||{};
   const groups=[['recurring','每日固定'],['periodic','周期'],['oneoff','偶发（不摊入预算）']];
-  let overCount=0, setCount=0;
+  let overCount=0, overTotal=0, setCount=0;
   let html='';
   groups.forEach(([nature,label])=>{
     const cats=state.categories.filter(c=>c.type==='expense'&&c.nature===nature).sort((a,b)=>a.sort-b.sort);
@@ -786,14 +792,21 @@ function renderBudgetActual(){
     });
     rows.sort((a,b)=>b.effectiveActual-a.effectiveActual);
     if(nature==='oneoff'){
-      html+='<div class="section-title">'+label+'</div><div class="budget-grid">'+
-        rows.map(r=>'<div class="btile" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
-          '<div class="tn">'+r.c.icon+' '+esc(r.c.name)+'</div>'+
-          '<div class="tv" style="color:var(--expense)">'+fmtMoney(r.effectiveActual)+'</div>'+
-        '</div>').join('')+'</div>';
+      const total=rows.reduce((s,r)=>s+r.effectiveActual,0);
+      html+='<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">'+
+        '<span>'+label+'</span>'+
+        '<span style="color:var(--expense);font-weight:700">'+fmtMoney(total)+'</span>'+
+      '</div>'+
+      '<div class="oo-list">'+
+        rows.map(r=>'<div class="oo-row" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
+          '<span class="ico">'+r.c.icon+'</span>'+
+          '<span class="nm">'+esc(r.c.name)+'</span>'+
+          '<span class="amt">'+fmtMoney(r.effectiveActual)+'</span>'+
+        '</div>').join('')+
+      '</div>';
       return;
     }
-    rows.forEach(r=>{if(r.over)overCount++; if(r.b>0)setCount++;});
+    rows.forEach(r=>{if(r.over){overCount++;overTotal+=r.overshoot;} if(r.b>0)setCount++;});
     html+='<div class="section-title">'+label+'</div><div class="budget-grid">'+
       rows.map(r=>{
         const cls=r.over?'over':(r.b>0&&r.ratio>=0.85?'warn':'');
@@ -807,7 +820,7 @@ function renderBudgetActual(){
   const budgetedIds=state.categories.filter(c=>c.type==='expense'&&c.nature!=='oneoff').map(c=>c.id);
   const totalBudget=budgetedIds.reduce((s,id)=>s+Number(items[id]||0),0);
   el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+
-    (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支</span>':'<span style="color:var(--good);font-weight:700">✅ 未超支</span>')+
+    (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支 '+fmtMoney(overTotal)+'</span>':'<span style="color:var(--good);font-weight:700">✅ 未超支</span>')+
     ' · 已设 '+setCount+' 项 · 合计 '+fmtMoney(totalBudget)+'/¥7000 · 点卡片看明细/改预算</div>'+html;
 }
 
