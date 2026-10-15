@@ -761,16 +761,8 @@ function renderBudgetPage(v){
       (m===curMonth()?'':'<button class="btn sm" onclick="shiftStat(1)">›</button>')+
       gearBtn()+
     '</div></div>'+
-    '<div class="banner" style="border-color:var(--brand);border-left-color:var(--brand)">'+
-      '<b>预算标准：</b>税后月收入 <b>¥8500</b> · 每月存款 <b>≥¥1500</b> · 可支出预算 <b>≤¥7000</b>。<br>建议按近<b>3年</b>支出估算：每日固定类取 <b>P75 分位</b>，周期类取<b>摊销月均</b>，偶发不摊入预算。'+
-    '</div>'+
-    '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">预算 vs 实际</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充建议</button></div><div id="budgetActual"></div></div>'+
-    '<div class="card"><h3>固定预算（填充时优先用这些值）</h3><div id="fixedBudgets"></div></div>'+
-    '<div class="card"><h3>预算计算逻辑（备注）</h3>'+
-      '<textarea id="budgetNote" placeholder="在此备注各分类预算的计算逻辑，例如：日用品 200 = 洗发水22 + 沐浴露33 + 洗衣液6 + 卫生巾棉条42 + 纸巾20 + 精华粉底液50 + 其他25" oninput="state.meta.budgetNote=this.value;saveAll()" style="width:100%;min-height:110px;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--surface);color:var(--ink);font-size:13px;font-family:inherit;line-height:1.6;resize:vertical;display:block">'+esc(state.meta.budgetNote||'')+'</textarea>'+
-    '</div>';
+    '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><h3 style="margin:0">预算 vs 实际</h3><button class="btn sm primary" onclick="fillBudgetFromSuggest()">✨ 一键填充</button></div><div id="budgetActual"></div></div>';
   renderBudgetActual();
-  renderFixedBudgets();
 }
 
 function renderBudgetActual(){
@@ -821,18 +813,25 @@ function renderBudgetActual(){
 function showBudgetDetail(catId){
   const m=state.month;
   const c=catById(catId); if(!c)return;
+  const fb=state.meta.fixedBudgets&&state.meta.fixedBudgets[c.name];
   const b=Number((state.budgets[m]&&state.budgets[m].items)?state.budgets[m].items[catId]:0);
   const txs=txInMonth(m).filter(t=>t.type==='expense'&&t.categoryId===catId).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt));
   const total=txs.reduce((s,t)=>s+Number(t.amount||0),0);
   modal('<h3>'+c.icon+' '+esc(c.name)+'</h3>'+
-    (c.nature!=='oneoff'?'<div class="field"><span>预算</span><input type="number" id="bd_input" min="0" step="1" placeholder="未设" value="'+(b||(state.meta.fixedBudgets&&state.meta.fixedBudgets[c.name])||'')+'" inputmode="decimal"></div>':'')+
+    (c.nature!=='oneoff'
+      ? '<div class="field"><span>本月预算</span><input type="number" id="bd_input" min="0" step="1" placeholder="未设" value="'+(b||'')+'" inputmode="decimal"></div>'+
+        '<div class="field"><span>固定预算</span><input type="number" id="bd_fixed" min="0" step="1" placeholder="未设" value="'+(fb||'')+'" inputmode="decimal"></div>'
+      : '')+
     '<p>'+monthLabel(m)+' · 共 '+txs.length+' 笔 · 合计 '+fmtMoney(total)+'</p>'+
     (txs.length?txs.slice(0,200).map(t=>'<div class="row"><div class="mid"><div class="nm">'+esc(t.date)+'</div><div class="sub">'+(t.note?esc(t.note):'')+'</div></div><div class="amt out">-'+fmtMoney(t.amount)+'</div></div>').join(''):'<div class="empty">本月无记录</div>')+
     '<div class="mrow"><button class="btn" onclick="closeModal(null)">取消</button>'+
-    (c.nature!=='oneoff'?'<button class="btn primary" onclick="saveBudgetFromModal(\''+catId+'\')">保存预算</button>':'')+
+    (c.nature!=='oneoff'?'<button class="btn primary" onclick="saveBudgetFromModal(\''+catId+'\')">保存</button>':'')+
     '</div>');
 }
 function saveBudgetFromModal(catId){
+  const c=catById(catId);
+  const fEl=document.getElementById('bd_fixed');
+  if(fEl&&c){const f=parseFloat(fEl.value)||0; setFixedBudget(c.name,f);}
   const v=parseFloat(document.getElementById('bd_input').value)||0;
   setBudget(catId,v);
   closeModal(null);
@@ -859,16 +858,6 @@ function fillBudgetFromSuggest(){
     if(s>0){if(!state.budgets[m])state.budgets[m]={items:{}}; state.budgets[m].items[c.id]=Math.round(s); n++;}
   });
   saveAll();render();toast('已为 '+monthLabel(m)+' 填充 '+n+' 项预算（含固定预算）');
-}
-function renderFixedBudgets(){
-  const el=$('#fixedBudgets'); if(!el)return;
-  const fb=state.meta.fixedBudgets||{};
-  const entries=Object.entries(fb);
-  if(!entries.length){el.innerHTML='<div class="empty">暂无固定预算</div>';return;}
-  el.innerHTML=entries.map(([name,val])=>
-    '<div class="kv"><span class="k">'+esc(name)+'</span>'+
-    '<input type="number" min="0" step="1" value="'+val+'" onchange="setFixedBudget(\''+name+'\',this.value)" style="width:100px;text-align:right;border:1px solid var(--border);border-radius:8px;padding:6px 8px;background:var(--surface);color:var(--ink);font-size:14px"></div>'
-  ).join('');
 }
 function setFixedBudget(name,val){
   state.meta.fixedBudgets=state.meta.fixedBudgets||{};
