@@ -168,6 +168,18 @@ main#view{padding:16px 14px 24px;min-height:100vh}
   padding:4px 8px;border-radius:8px;border:1px solid var(--border)}
 .legend .sw{width:10px;height:10px;border-radius:3px;flex-shrink:0}
 .legend .lg.on{background:var(--surface-2)}
+/* 圆环图图例：按性质分组、组内排序的醒目行 */
+.legend.donut-lg{flex-direction:column;gap:6px;margin-top:14px;width:100%}
+.legend.donut-lg .lg-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:var(--ink);margin-top:10px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.legend.donut-lg .lg-head:first-child{margin-top:0}
+.legend.donut-lg .lg-head span:last-child{font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.legend.donut-lg .lg{display:grid;grid-template-columns:12px 1fr auto;grid-template-rows:auto auto;column-gap:8px;row-gap:3px;align-items:center;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--ink)}
+.legend.donut-lg .lg .sw{grid-column:1;grid-row:1/span 2;width:10px;height:10px;border-radius:3px}
+.legend.donut-lg .lg-nm{grid-column:2;grid-row:1;font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend.donut-lg .lg-amt{grid-column:3;grid-row:1;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
+.legend.donut-lg .lg-bar{grid-column:2/span 2;grid-row:2;height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden}
+.legend.donut-lg .lg-bar i{display:block;height:100%;border-radius:3px}
+.legend.donut-lg .lg.on{border-color:var(--brand);background:var(--surface-2)}
 .donut-wrap{display:flex;flex-direction:column;align-items:center}
 .donut-wrap svg{width:190px;height:190px}
 .donut-center{font-size:22px;font-weight:700;fill:var(--ink)}
@@ -584,7 +596,30 @@ function donutSVG(items, total, centerLabel){
     '<g transform="rotate(-90 '+cx+' '+cy+')">'+segs+'</g>'+
     '<text x="'+cx+'" y="'+cy+'" text-anchor="middle" class="donut-center">'+fmtMoney(total)+'</text>'+
     '<text x="'+cx+'" y="'+(cy+14)+'" text-anchor="middle" class="donut-cap">'+centerLabel+'</text></svg>'+
-    '<div class="legend">'+items.map((it,i)=>'<div class="lg" data-i="'+i+'" style="cursor:pointer"><span class="sw" style="background:'+it.color+'"></span>'+esc(it.name)+' <span class="badge" style="font-size:9px">'+natureShort(it.type,it.nature)+'</span> '+fmtNum(it.value)+'</div>').join('')+'</div></div>';
+    '<div class="legend donut-lg">'+donutLegend(items)+'</div></div>';
+}
+function donutLegend(items){
+  // items 已按性质→金额降序排好；这里按性质分组渲染，组内保持金额降序
+  const type=(items[0]&&items[0].type)||'expense';
+  const groups=[['recurring',type==='income'?'稳定':'固定'],['periodic','周期'],['oneoff','偶发']];
+  let html='';
+  groups.forEach(([nat,label])=>{
+    const idx=[];items.forEach((it,i)=>{if(it.nature===nat)idx.push(i);});
+    if(!idx.length)return;
+    const gSum=idx.reduce((s,i)=>s+items[i].value,0);
+    html+='<div class="lg-head"><span>'+label+'</span><span>'+fmtNum(gSum)+'</span></div>';
+    idx.forEach(i=>{
+      const it=items[i];
+      const pct=gSum>0?Math.round(it.value/gSum*100):0;
+      html+='<div class="lg" data-i="'+i+'" style="cursor:pointer">'+
+        '<span class="sw" style="background:'+it.color+'"></span>'+
+        '<span class="lg-nm">'+it.icon+' '+esc(it.name)+'</span>'+
+        '<span class="lg-amt">'+fmtNum(it.value)+'</span>'+
+        '<span class="lg-bar"><i style="width:'+Math.max(pct,2)+'%;background:'+it.color+'"></i></span>'+
+      '</div>';
+    });
+  });
+  return html;
 }
 function bindDonutTap(el, items, onTap){
   el.querySelectorAll('[data-i]').forEach(n=>{
