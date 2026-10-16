@@ -402,9 +402,22 @@ function monthExpense(m){
   return state.categories.filter(c=>c.type==='expense').reduce((s,c)=>s+effExpByCat(m,c.id),0);
 }
 function monthExpenseByCat(m,catId){return catSum(txInMonth(m),catId);}
-function periodicAvg(m,cat){const P=cat.periodMonths||1;let total=0;
-  for(let i=0;i<P;i++)total+=monthExpenseByCat(shiftMonth(m,-i),cat.id);
-  return total/P;}
+function monthDiff(a,b){const[y1,m1]=a.split('-').map(Number),[y2,m2]=b.split('-').map(Number);return (y2-y1)*12+(m2-m1);}
+function periodicAvg(m,cat){
+  // 动态摊销：每笔支出摊到「下一次同分类支出」之前；下次支出录入后自动重算
+  const byMonth={};
+  state.transactions.filter(t=>!t.deletedAt&&t.type==='expense'&&t.categoryId===cat.id).forEach(t=>{
+    const mo=t.date.slice(0,7); byMonth[mo]=(byMonth[mo]||0)+Number(t.amount||0);
+  });
+  const months=Object.keys(byMonth).sort();
+  let payMonth=null;
+  for(const mo of months){ if(mo<=m) payMonth=mo; else break; }
+  if(payMonth===null) return 0;
+  const next=months[months.indexOf(payMonth)+1]||null;
+  const span=Math.max(next?monthDiff(payMonth,next):(cat.periodMonths||1),1);
+  if(monthDiff(payMonth,m)>=span) return 0; // 这笔的覆盖期已过
+  return (byMonth[payMonth])/span;
+}
 function yearIncome(m){const y=m.split('-')[0];let s=0;state.transactions.forEach(t=>{if(!t.deletedAt&&t.type==='income'&&t.date.startsWith(y))s+=Number(t.amount||0);});return s;}
 function yearExpense(m){const y=m.split('-')[0];let s=0;
   state.categories.filter(c=>c.type==='expense').forEach(c=>{
