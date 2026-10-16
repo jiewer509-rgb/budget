@@ -59,8 +59,8 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 
 /* ===== 顶栏 ===== */
 .topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
-.topbar h1{font-size:20px;font-weight:700;margin:0}
-.topbar .sub{font-size:13px;color:var(--ink-2)}
+.topbar h1{font-size:22px;font-weight:700;margin:0;letter-spacing:-.01em}
+.topbar .sub{font-size:12px;color:var(--muted);font-weight:500}
 .btn{appearance:none;border:none;border-radius:12px;padding:10px 14px;font-size:14px;font-weight:600;
   background:var(--surface-2);color:var(--ink);cursor:pointer}
 .btn:active{opacity:.7}
@@ -72,7 +72,8 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 /* ===== 卡片 ===== */
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
   padding:14px;margin-bottom:12px;box-shadow:var(--shadow)}
-.card h3{font-size:13px;font-weight:600;color:var(--ink-2);margin:0 0 10px;text-transform:none}
+/* 卡片标题＝分区标签：小、灰、带字距，让位给数据 */
+.card h3{font-size:12px;font-weight:700;color:var(--muted);margin:0 0 12px;letter-spacing:.06em}
 
 /* ===== 记账表单 ===== */
 .seg{display:flex;background:var(--surface-2);border-radius:12px;padding:3px;margin-bottom:12px}
@@ -150,12 +151,14 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 #tabbar button .ti{font-size:21px;line-height:1}
 #tabbar button.on{color:var(--brand)}
 
-/* ===== 汇总磁贴 ===== */
+/* ===== 汇总磁贴：页面主指标，字号必须明显压过正文 ===== */
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
-.tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px}
-.tile .lb{font-size:12px;color:var(--ink-2)}
-.tile .vl{font-size:22px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums}
-.tile .dl{font-size:11px;color:var(--muted);margin-top:2px}
+.tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;min-width:0}
+.tile .lb{font-size:11px;font-weight:600;color:var(--muted);letter-spacing:.06em}
+/* 大数字：手机上约 24px，桌面封顶 30px。overflow-wrap 只在极端长数字时兜底换行，不让它溢出卡片 */
+.tile .vl{font-size:clamp(22px,6.4vw,30px);font-weight:700;margin-top:3px;line-height:1.15;
+  letter-spacing:-.02em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.tile .dl{font-size:11px;color:var(--muted);margin-top:3px}
 .vl.income{color:var(--income)} .vl.expense{color:var(--expense)} .vl.brand{color:var(--brand)}
 
 /* ===== 列表 ===== */
@@ -163,15 +166,15 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .row:last-child{border-bottom:none}
 .row .ico{font-size:20px;width:28px;text-align:center}
 .row .mid{flex:1;min-width:0}
-.row .nm{font-size:14px;font-weight:600}
+.row .nm{font-size:15px;font-weight:600}
 .row .sub{font-size:11px;color:var(--muted)}
-.row .amt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+.row .amt{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .amt.in{color:var(--income)} .amt.out{color:var(--expense)}
 .row .badge{font-size:10px;padding:1px 6px;border-radius:6px;border:1px solid var(--border);color:var(--muted)}
 /* 最近记录：点一条就改，右边 ✕ 直接删 */
 .rec-day{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;font-weight:700;
-  color:var(--muted);padding:10px 2px 4px;border-bottom:1px solid var(--border)}
-.rec-day .dsum{font-variant-numeric:tabular-nums}
+  color:var(--muted);padding:10px 2px 4px;border-bottom:1px solid var(--border);letter-spacing:.06em}
+.rec-day .dsum{font-variant-numeric:tabular-nums;font-size:13px;font-weight:700;color:var(--ink-2);letter-spacing:0}
 .rec-row{cursor:pointer;border-radius:8px;padding-left:6px;padding-right:6px;margin:0 -6px}
 .rec-row:active{background:var(--surface-2)}
 .rec-note{font-size:11px;color:var(--muted);font-weight:400;margin-left:5px}
@@ -186,7 +189,7 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .budget-row{padding:10px 0;border-bottom:1px solid var(--line)}
 .budget-row:last-child{border-bottom:none}
 .br-top{display:flex;align-items:center;gap:6px;margin-bottom:6px}
-.br-top .nm{font-weight:600;font-size:14px;flex:1}
+.br-top .nm{font-weight:600;font-size:15px;flex:1}
 .br-top input[type=number]{width:110px;border:1px solid var(--border);background:var(--surface);color:var(--ink);
   border-radius:8px;padding:6px 8px;font-size:14px;text-align:right;font-family:inherit}
 .meter{height:8px;background:var(--surface-2);border-radius:6px;overflow:hidden;margin-top:6px}
@@ -197,9 +200,9 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .budget-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .btile{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 12px;cursor:pointer}
 .btile:active{opacity:.8}
-.btile .tn{font-size:13px;font-weight:600;margin-bottom:2px}
-.btile .tv{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
-.btile .tv .b{font-size:11px;color:var(--muted);font-weight:400}
+.btile .tn{font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:3px}
+.btile .tv{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;line-height:1.2}
+.btile .tv .b{font-size:11px;color:var(--muted);font-weight:400;letter-spacing:0}
 .btile .meter{margin-top:6px;height:6px}
 .btile.over{border-color:var(--critical)}
 .btile.over .tv{color:var(--critical)}
@@ -208,8 +211,15 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .oo-row{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .oo-row:last-child{border-bottom:none}
 .oo-row .ico{font-size:16px;width:22px;text-align:center;flex-shrink:0}
-.oo-row .nm{flex:1;font-size:13px;color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.oo-row .amt{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--expense)}
+.oo-row .nm{flex:1;font-size:14px;color:var(--ink-2);min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.oo-row .amt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--expense);letter-spacing:-.01em}
+/* 预算页头条：超支 / 剩余额度 */
+.bud-hero{font-size:clamp(21px,5.8vw,25px);font-weight:700;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;line-height:1.2;margin-bottom:3px}
+.bud-hero.critical{color:var(--critical)}
+.bud-hero.good{color:var(--good)}
+.bud-sub{font-size:12px;color:var(--ink-2);margin-bottom:5px}
+.bud-meta{font-size:11px;color:var(--muted);line-height:1.55;margin-bottom:14px}
 
 /* ===== 图表 ===== */
 .chart{margin:6px 0}
@@ -220,19 +230,19 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .legend .lg.on{background:var(--surface-2)}
 /* 圆环图图例：按性质分组、组内排序的醒目行 */
 .legend.donut-lg{flex-direction:column;gap:6px;margin-top:14px;width:100%}
-.legend.donut-lg .lg-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-weight:700;color:var(--ink);margin-top:10px;padding-bottom:5px;border-bottom:1px solid var(--line)}
+.legend.donut-lg .lg-head{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em;margin-top:10px;padding-bottom:5px;border-bottom:1px solid var(--line)}
 .legend.donut-lg .lg-head:first-child{margin-top:0}
-.legend.donut-lg .lg-head span:last-child{font-weight:600;color:var(--muted);font-variant-numeric:tabular-nums}
+.legend.donut-lg .lg-head span:last-child{font-size:13px;font-weight:700;color:var(--ink-2);font-variant-numeric:tabular-nums;letter-spacing:0}
 .legend.donut-lg .lg{display:grid;grid-template-columns:12px 1fr auto;grid-template-rows:auto auto;column-gap:8px;row-gap:3px;align-items:center;padding:8px 10px;border-radius:10px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--ink)}
 .legend.donut-lg .lg .sw{grid-column:1;grid-row:1/span 2;width:10px;height:10px;border-radius:3px}
-.legend.donut-lg .lg-nm{grid-column:2;grid-row:1;font-size:13px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.legend.donut-lg .lg-amt{grid-column:3;grid-row:1;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
+.legend.donut-lg .lg-nm{grid-column:2;grid-row:1;font-size:14px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend.donut-lg .lg-amt{grid-column:3;grid-row:1;font-size:16px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;color:var(--ink)}
 .legend.donut-lg .lg-bar{grid-column:2/span 2;grid-row:2;height:5px;background:var(--surface-2);border-radius:3px;overflow:hidden}
 .legend.donut-lg .lg-bar i{display:block;height:100%;border-radius:3px}
 .legend.donut-lg .lg.on{border-color:var(--brand);background:var(--surface-2)}
 .donut-wrap{display:flex;flex-direction:column;align-items:center}
 .donut-wrap svg{width:190px;height:190px}
-.donut-center{font-size:22px;font-weight:700;fill:var(--ink)}
+.donut-center{font-size:26px;font-weight:700;fill:var(--ink);letter-spacing:-.02em}
 .donut-cap{font-size:10px;fill:var(--muted)}
 svg text{font-family:inherit}
 svg .axis{stroke:var(--baseline);stroke-width:1}
@@ -245,8 +255,8 @@ svg .bar-expense{fill:var(--expense)}
 .ref-row{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
 .ref-row:last-child{border-bottom:none}
 .ref-row .nm{flex:1;font-size:14px}
-.ref-row .v{font-variant-numeric:tabular-nums;font-size:13px;color:var(--ink-2)}
-.ref-row .sug{font-weight:700;font-size:14px;color:var(--brand)}
+.ref-row .v{font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
+.ref-row .sug{font-weight:700;font-size:16px;color:var(--brand);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 
 /* ===== 提示/弹窗 ===== */
 #toast{position:fixed;left:50%;bottom:calc(76px + env(safe-area-inset-bottom));transform:translateX(-50%);
@@ -286,10 +296,12 @@ svg .bar-expense{fill:var(--expense)}
   border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:var(--ink)}
 .banner b{color:var(--ink)}
 .banner .acts{margin-top:8px;display:flex;gap:8px}
-.section-title{font-size:13px;font-weight:700;color:var(--muted);margin:18px 0 6px;text-transform:none}
-.kv{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.section-title{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.08em;margin:18px 0 8px}
+/* .kv 目前只用于设置页的「标签 → 一句话」行，值可能是长句，所以不做成大数字 */
+.kv{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
 .kv:last-child{border-bottom:none}
-.kv .k{color:var(--ink-2)} .kv .v{font-weight:600;font-variant-numeric:tabular-nums}
+.kv .k{font-size:12px;color:var(--muted);flex-shrink:0}
+.kv .v{flex:1;min-width:0;text-align:right;font-size:14px;font-weight:600;color:var(--ink)}
 .switch{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
 </style>
 </head>
@@ -1273,7 +1285,7 @@ function renderBudgetActual(){
       const total=rows.reduce((s,r)=>s+r.effectiveActual,0);
       html+='<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">'+
         '<span>'+label+'</span>'+
-        '<span style="color:var(--expense);font-weight:700">'+fmtMoney(total)+'</span>'+
+        '<span style="color:var(--expense);font-weight:700;font-size:16px;letter-spacing:-.01em">'+fmtMoney(total)+'</span>'+
       '</div>'+
       '<div class="oo-list">'+
         rows.map(r=>'<div class="oo-row" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
@@ -1298,13 +1310,13 @@ function renderBudgetActual(){
   const totalBudget=budgetedIds.reduce((s,id)=>s+Number(items[id]||0),0);
   let summary;
   if(totalActual>TOTAL_CAP){
-    summary='<span style="color:var(--critical);font-weight:700">⚠ 超支 '+fmtMoney(totalActual-TOTAL_CAP)+'</span>'+
-      (topOver?' · 超支最多：'+topOver.c.icon+' '+esc(topOver.c.name)+'（超 ¥'+fmtMoney(topOver.overshoot)+'）':'');
+    summary='<div class="bud-hero critical">⚠ 超支 '+fmtMoney(totalActual-TOTAL_CAP)+'</div>'+
+      (topOver?'<div class="bud-sub">超支最多：'+topOver.c.icon+' '+esc(topOver.c.name)+'（超 '+fmtMoney(topOver.overshoot)+'）</div>':'');
   }else{
-    summary='<span style="color:var(--good);font-weight:700">✅ 本月剩余额度 '+fmtMoney(TOTAL_CAP-totalActual)+'</span>';
+    summary='<div class="bud-hero good">✓ 本月剩余额度 '+fmtMoney(TOTAL_CAP-totalActual)+'</div>';
   }
-  el.innerHTML='<div style="font-size:13px;color:var(--ink-2);margin-bottom:6px">'+summary+
-    ' · 已设 '+setCount+' 项 · 预算合计 '+fmtMoney(totalBudget)+'/¥'+TOTAL_CAP+' · 点卡片看明细/改预算</div>'+html;
+  el.innerHTML=summary+
+    '<div class="bud-meta">已设 '+setCount+' 项 · 预算合计 '+fmtMoney(totalBudget)+' / ¥'+TOTAL_CAP+' · 点卡片看明细 / 改预算</div>'+html;
 }
 
 function showBudgetDetail(catId){
