@@ -208,6 +208,20 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .btile.over .tv{color:var(--critical)}
 .btile.warn{border-color:var(--warn)}
 .oo-list{display:flex;flex-direction:column;margin-top:2px}
+/* 偶发的「灵活额度」提醒：额度做大，口径说明做小 */
+.flex-box{background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin:8px 0 10px}
+.flex-box.warn{border-color:var(--warn)}
+.flex-box.over{border-color:var(--critical)}
+.flex-top{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.flex-lb{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.06em}
+.flex-amt{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.flex-box.over .flex-amt{color:var(--critical)}
+.flex-line{font-size:12px;color:var(--ink-2);margin-top:3px}
+.flex-line b{font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink)}
+.flex-line b.good{color:var(--good)}
+.flex-line b.bad{color:var(--critical)}
+.flex-box .meter{margin-top:7px}
+.flex-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-top:6px}
 .oo-row{display:flex;align-items:center;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line);cursor:pointer}
 .oo-row:last-child{border-bottom:none}
 .oo-row .ico{font-size:16px;width:22px;text-align:center;flex-shrink:0}
@@ -1257,11 +1271,36 @@ function renderBudgetPage(v){
   renderBudgetActual();
 }
 
+/* 偶发的灵活额度提醒
+ * 偶发支出不摊入固定预算，但每月仍要在总预算里留出一笔灵活额度，
+ * 所以：灵活额度 = 月总预算(TOTAL_CAP) − 已设预算合计（固定 + 周期的预算）。
+ * 只做提醒，不新增要填的字段：额度是从已设预算推出来的，改了预算它自己就跟着变。 */
+function flexBudgetHTML(used,totalBudget,setCount){
+  const cap=TOTAL_CAP-totalBudget;
+  const left=cap-used;
+  const ratio=cap>0?used/cap:(used>0?2:0);
+  const cls=left<0?'over':(ratio>=0.8?'warn':'');
+  const head=left<0?'已超灵活额度':'还可灵活花';
+  const hint = cap<=0
+    ? '已设预算合计已经占满月总预算 '+fmtMoney(TOTAL_CAP)+'，没有留出灵活空间'
+    : '月总预算 '+fmtMoney(TOTAL_CAP)+' − 已设预算合计 '+fmtMoney(totalBudget)+
+      (setCount?'':'（还没设固定预算，暂按全额计）');
+  return '<div class="flex-box '+cls+'">'+
+    '<div class="flex-top"><span class="flex-lb">灵活额度</span><span class="flex-amt">'+fmtMoney(cap)+'</span></div>'+
+    '<div class="flex-line">偶发已用 <b>'+fmtMoney(used)+'</b> · '+head+
+      ' <b class="'+(left<0?'bad':'good')+'">'+fmtMoney(Math.abs(left))+'</b></div>'+
+    '<div class="meter"><div class="fill '+cls+'" style="width:'+Math.min(ratio*100,100)+'%"></div></div>'+
+    '<div class="flex-hint">偶发不摊入固定预算，所以每月先在总预算里留出这笔 · '+hint+'</div>'+
+  '</div>';
+}
 function renderBudgetActual(){
   const el=$('#budgetActual'); if(!el)return;
   const m=state.month;
   const items=(state.budgets[m]&&state.budgets[m].items)||{};
   const groups=[['recurring','每日固定'],['periodic','周期'],['oneoff','偶发（不摊入预算）']];
+  // 已设预算合计要提前算：偶发那一段的「灵活额度 = 月总预算 − 已设预算合计」要用到它
+  const budgetedIds=state.categories.filter(c=>c.type==='expense'&&c.nature!=='oneoff').map(c=>c.id);
+  const totalBudget=budgetedIds.reduce((s,id)=>s+Number(items[id]||0),0);
   let totalActual=0, setCount=0, topOver=null;
   let html='';
   groups.forEach(([nature,label])=>{
@@ -1287,6 +1326,7 @@ function renderBudgetActual(){
         '<span>'+label+'</span>'+
         '<span style="color:var(--expense);font-weight:700;font-size:16px;letter-spacing:-.01em">'+fmtMoney(total)+'</span>'+
       '</div>'+
+      flexBudgetHTML(total,totalBudget,setCount)+
       '<div class="oo-list">'+
         rows.map(r=>'<div class="oo-row" onclick="showBudgetDetail(\''+r.c.id+'\')">'+
           '<span class="ico">'+r.c.icon+'</span>'+
@@ -1306,8 +1346,6 @@ function renderBudgetActual(){
         '</div>';
       }).join('')+'</div>';
   });
-  const budgetedIds=state.categories.filter(c=>c.type==='expense'&&c.nature!=='oneoff').map(c=>c.id);
-  const totalBudget=budgetedIds.reduce((s,id)=>s+Number(items[id]||0),0);
   let summary;
   if(totalActual>TOTAL_CAP){
     summary='<div class="bud-hero critical">⚠ 超支 '+fmtMoney(totalActual-TOTAL_CAP)+'</div>'+
