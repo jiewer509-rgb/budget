@@ -260,6 +260,27 @@ svg .bar-expense{fill:var(--expense)}
 #modal h3{margin:0 0 6px;font-size:17px}
 #modal p{font-size:14px;color:var(--ink-2);margin:0 0 16px}
 #modal .mrow{display:flex;gap:8px;justify-content:flex-end}
+/* ===== 底部抽屉（就地改一条记录，不跳页） ===== */
+#sheetWrap{position:fixed;inset:0;z-index:70;display:none}
+#sheetWrap.show{display:block}
+#sheetScrim{position:absolute;inset:0;background:rgba(0,0,0,.45);opacity:0;transition:opacity .22s}
+#sheetWrap.show #sheetScrim{opacity:1}
+#sheet{position:absolute;left:0;right:0;bottom:0;max-width:640px;margin:0 auto;
+  background:var(--surface);border-radius:20px 20px 0 0;
+  padding:10px 14px calc(16px + env(safe-area-inset-bottom));
+  max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  box-shadow:0 -6px 24px rgba(0,0,0,.18);
+  transform:translateY(100%);transition:transform .26s cubic-bezier(.32,.72,0,1)}
+#sheetWrap.show #sheet{transform:translateY(0)}
+.sheet-grab{width:38px;height:4px;border-radius:2px;background:var(--border);margin:0 auto 12px}
+.sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.sheet-head h3{margin:0;font-size:16px}
+.sheet-save{flex:2;padding:13px;font-size:15px;font-weight:700;border:none;border-radius:14px;
+  background:var(--brand);color:var(--brand-ink);cursor:pointer;font-family:inherit;transition:transform .09s}
+.sheet-del{flex:1;padding:13px;font-size:15px;font-weight:700;border:1px solid var(--border);border-radius:14px;
+  background:transparent;color:var(--critical);cursor:pointer;font-family:inherit;transition:transform .09s}
+.sheet-save:active,.sheet-del:active{transform:scale(.97)}
+@media (prefers-reduced-motion: reduce){#sheet{transition:none}#sheetScrim{transition:none}}
 
 .banner{background:var(--surface);border:1px solid var(--warn);border-left:4px solid var(--warn);
   border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:var(--ink)}
@@ -279,6 +300,7 @@ svg .bar-expense{fill:var(--expense)}
 </div>
 <div id="toast"></div>
 <div id="modal"></div>
+<div id="sheetWrap"><div id="sheetScrim" onclick="closeSheet()"></div><div id="sheet"></div></div>
 
 <script>
 "use strict";
@@ -433,7 +455,8 @@ let state={
   meta:{ lastExportAt:null, remindDays:14 },
   view:'record',
   month:curMonth(),
-  rec:{type:'expense',categoryId:null,amount:'',date:todayStr(),note:'',editId:null},
+  rec:{type:'expense',categoryId:null,amount:'',date:todayStr(),note:''},
+  edit:null,        // 底部抽屉正在编辑的那一条
   statCat:null,     // 统计页下钻的分类 id
   catExpanded:false,
   catSearch:'',
@@ -525,6 +548,7 @@ function renderTabbar(){
 }
 function go(k){
   if(k==='search'&&state.view!=='search')state.searchQuery='';  // 每次进来先看最近记录
+  if(state.edit)closeSheet();                                   // 切页时收起抽屉
   state.view=k;state.statCat=null;render();window.scrollTo(0,0);
 }
 function gearBtn(){return '<button class="btn sm ghost" style="padding:4px 8px;font-size:16px" onclick="go(\'search\')">🔍</button><button class="btn sm ghost" style="padding:4px 8px;font-size:18px" onclick="go(\'settings\')">⚙️</button>';}
@@ -536,9 +560,8 @@ function renderRecord(v){
   const rec=state.rec;
   const cats=activeCats(rec.type);
   if(!rec.categoryId && cats[0])rec.categoryId=cats[0].id;
-  const editing=!!rec.editId;
   v.innerHTML=
-    '<div class="topbar"><div><h1>'+(editing?'编辑记录':'记一笔')+'</h1><div class="sub">'+monthLabel(curMonth())+'</div></div>'+gearBtn()+'</div>'+
+    '<div class="topbar"><div><h1>记一笔</h1><div class="sub">'+monthLabel(curMonth())+'</div></div>'+gearBtn()+'</div>'+
     '<div class="card">'+
       '<div class="seg">'+
         '<button class="'+(rec.type==='expense'?'on expense':'')+'" onclick="setRecType(\'expense\')">支出</button>'+
@@ -559,8 +582,7 @@ function renderRecord(v){
       '<div id="catSection">'+catSectionHTML()+'</div>'+
       '<div class="field"><span>日期</span><input type="date" value="'+esc(rec.date)+'" onchange="state.rec.date=this.value"></div>'+
       '<div class="field"><span>备注</span><input type="text" placeholder="选填" value="'+esc(rec.note)+'" oninput="state.rec.note=this.value"></div>'+
-      '<button class="save-btn" onclick="saveTx()">'+(editing?'保存修改':'保存')+'</button>'+
-      (editing?'<button class="btn danger" style="width:100%;margin-top:8px" onclick="delTx()">删除这条</button>':'')+
+      '<button class="save-btn" onclick="saveTx()">保存</button>'+
     '</div>'+
     '<div id="todayWrap">'+renderTodaySummary()+'</div>'+
     '<div id="recentWrap">'+recentListHTML()+'</div>';
@@ -579,7 +601,7 @@ function refreshRecordLists(fromTodayExp){
 
 function setRecType(t){
   if(state.rec.type===t)return;
-  state.rec.type=t;state.rec.categoryId=(activeCats(t)[0]||{}).id;state.rec.editId=null;
+  state.rec.type=t;state.rec.categoryId=(activeCats(t)[0]||{}).id;
   haptic(8);render();
 }
 
@@ -623,13 +645,17 @@ function toggleCat(){
   if(!state.catExpanded)state.catSearch='';
   haptic(6);refreshCatSection();
 }
-function catCell(c,compact){
-  const on=state.rec.categoryId===c.id?' on':'';
-  if(compact)return '<div class="chip'+on+'" data-cat="'+esc(c.id)+'" onclick="pickCat(\''+c.id+'\',this)"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span></div>';
-  return '<div class="cat'+on+'" data-cat="'+esc(c.id)+'" onclick="pickCat(\''+c.id+'\',this)"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span><span class="badge">'+natureLabel(c)+'</span></div>';
+function catCell(c,compact,opts){
+  opts=opts||{};
+  const selId=('selId' in opts)?opts.selId:state.rec.categoryId;
+  const click=(opts.fn||'pickCat')+'(\''+c.id+'\',this)';
+  const on=selId===c.id?' on':'';
+  if(compact)return '<div class="chip'+on+'" data-cat="'+esc(c.id)+'" onclick="'+click+'"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span></div>';
+  return '<div class="cat'+on+'" data-cat="'+esc(c.id)+'" onclick="'+click+'"><span class="ico">'+c.icon+'</span><span class="nm">'+esc(c.name)+'</span><span class="badge">'+natureLabel(c)+'</span></div>';
 }
-function catGridHTML(cats){
-  const isIncome=state.rec.type==='income';
+function catGridHTML(cats,opts){
+  opts=opts||{};
+  const isIncome=(opts.type||state.rec.type)==='income';
   const groups=isIncome
     ? [['recurring','稳定'],['periodic','周期'],['oneoff','偶发']]
     : [['recurring','每日固定'],['periodic','周期'],['oneoff','偶发']];
@@ -638,7 +664,7 @@ function catGridHTML(cats){
     const g=cats.filter(c=>c.nature===nature);
     if(!g.length)return;
     html+='<div class="section-title" style="margin:8px 0 4px;font-size:11px">'+label+'</div>'+
-      '<div class="cat-grid" style="margin-bottom:6px">'+g.map(c=>catCell(c,false)).join('')+'</div>';
+      '<div class="cat-grid" style="margin-bottom:6px">'+g.map(c=>catCell(c,false,opts)).join('')+'</div>';
   });
   if(!cats.length)html+='<div class="empty" style="padding:12px">无匹配分类</div>';
   return html;
@@ -659,19 +685,22 @@ function calcExpr(s){
     return (typeof v==='number'&&isFinite(v))?v:null;
   }catch(e){return null;}
 }
-/* ---------------- 算式输入 ---------------- */
-function insertOp(op){
-  const el=$('#amount');
+/* ---------------- 算式输入（顶部表单 & 底部抽屉共用） ---------------- */
+function insertOpInto(inputId,op,which){
+  const el=document.getElementById(inputId);
   if(!el)return;
   const pos=(el.selectionStart!=null?el.selectionStart:el.value.length);
   el.value=el.value.slice(0,pos)+op+el.value.slice(pos);
-  state.rec.amount=el.value;
+  if(which==='edit'){ if(state.edit)state.edit.amount=el.value; }
+  else state.rec.amount=el.value;
   haptic(7);
   el.focus();
   const after=pos+op.length;
   try{ el.setSelectionRange(after,after); }catch(e){}
-  renderAmountPreview();
+  if(which==='edit')renderSheetPreview(); else renderAmountPreview();
 }
+function insertOp(op){insertOpInto('amount',op,'rec');}
+function insertOpSheet(op){insertOpInto('sheetAmount',op,'edit');}
 function renderAmountPreview(){
   const p=$('#amountPreview');
   if(!p)return;
@@ -707,42 +736,139 @@ function saveTx(){
   if(!state.rec.categoryId){haptic([18,40,18]);toast('请选择分类');return;}
   if(!state.rec.date){haptic([18,40,18]);toast('请选择日期');return;}
   const before=todayExpenseTotal();
-  const editing=!!state.rec.editId;
-  const backTo=(editing&&state.rec.returnView&&state.rec.returnView!==state.view)?state.rec.returnView:null;
-  if(editing){
-    const t=state.transactions.find(x=>x.id===state.rec.editId);
-    if(t){t.type=state.rec.type;t.categoryId=state.rec.categoryId;t.amount=amt;t.date=state.rec.date;t.note=state.rec.note.trim();t.updatedAt=Date.now();}
-  }else{
-    state.transactions.push({id:uid(),type:state.rec.type,categoryId:state.rec.categoryId,amount:amt,date:state.rec.date,note:state.rec.note.trim(),createdAt:Date.now(),updatedAt:Date.now(),deletedAt:null});
-  }
-  state.rec={type:state.rec.type,categoryId:state.rec.categoryId,amount:'',date:todayStr(),note:'',editId:null};
-  if(backTo)state.view=backTo;
+  state.transactions.push({id:uid(),type:state.rec.type,categoryId:state.rec.categoryId,amount:amt,date:state.rec.date,note:state.rec.note.trim(),createdAt:Date.now(),updatedAt:Date.now(),deletedAt:null});
+  state.rec={type:state.rec.type,categoryId:state.rec.categoryId,amount:'',date:todayStr(),note:''};
   saveAll();render();
-  haptic(editing?[10,30,10]:[14,28,14]);
-  if(editing){toast('改好了 ✓');return;}
+  haptic([14,28,14]);
   playSavedFx(amt,before,todayExpenseTotal());
   toast(saveCheer(amt));
 }
 
-function editTx(id){
+/* ---------------- 底部抽屉：就地改/删一条记录，不跳页、不丢位置 ---------------- */
+function openEditSheet(id){
   const t=state.transactions.find(x=>x.id===id);
-  if(!t)return;
-  state.rec={type:t.type,categoryId:t.categoryId,amount:String(t.amount),date:t.date,note:t.note||'',editId:id,
-    returnView:state.view};   // 改完回到原来那一页
-  state.view='record';render();window.scrollTo(0,0);
+  if(!t||t.deletedAt)return;
+  state.edit={id:t.id,type:t.type,categoryId:t.categoryId,amount:String(t.amount),date:t.date,
+    note:t.note||'',catOpen:false};
+  haptic(8);
+  renderSheet();
+  $('#sheetWrap').classList.add('show');
+  haptic(8);
+  setTimeout(()=>{const el=document.getElementById('sheetAmount');if(el)el.focus();},280);
 }
-
-async function delTx(){
-  const id=state.rec.editId;
-  if(!id)return;
-  const ok=await confirmDialog('删除这条记录','确定删除？可在"设置 → 回收站"中恢复。','删除',true);
-  if(!ok)return;
-  const t=state.transactions.find(x=>x.id===id);
-  if(t){t.deletedAt=Date.now();}
-  if(state.rec.returnView)state.view=state.rec.returnView;
-  state.rec={type:'expense',categoryId:(catsOf('expense')[0]||{}).id,amount:'',date:todayStr(),note:'',editId:null};
-  saveAll();render();
-  toast('已删除','撤销',()=>{t.deletedAt=null;saveAll();render();toast('已恢复');});
+function closeSheet(){
+  const w=$('#sheetWrap'); if(!w)return;
+  w.classList.remove('show');
+  state.edit=null;
+}
+function sheetToggleCat(){ state.edit.catOpen=!state.edit.catOpen; haptic(6); refreshSheetCat(); }
+function refreshSheetCat(){
+  const el=$('#sheetCat'); if(el)el.innerHTML=sheetCatHTML();
+}
+function sheetType(t){
+  if(state.edit.type===t)return;
+  state.edit.type=t;
+  state.edit.categoryId=(activeCats(t)[0]||{}).id;
+  state.edit.catOpen=false;
+  haptic(8);renderSheet();
+}
+function sheetCatHTML(){
+  const e=state.edit; if(!e)return '';
+  const cats=activeCats(e.type);
+  if(!e.categoryId&&cats[0])e.categoryId=cats[0].id;
+  const sel=cats.find(c=>c.id===e.categoryId);
+  return '<div class="field" style="justify-content:space-between;margin-bottom:6px">'+
+      '<span style="font-weight:600;color:var(--ink)">分类</span>'+
+      '<button class="btn sm ghost" style="padding:3px 8px" onclick="sheetToggleCat()">'+(e.catOpen?'收起 ▴':'选择 ▾')+'</button></div>'+
+    (e.catOpen
+      ? '<div id="sheetCatGrid">'+catGridHTML(cats,{selId:e.categoryId,fn:'sheetPickCat',type:e.type})+'</div>'
+      : '<div style="display:flex;align-items:center;gap:8px;padding:2px 0 8px">'+
+          '<span style="font-size:22px">'+(sel?sel.icon:'❓')+'</span>'+
+          '<span style="font-weight:600;font-size:15px">'+(sel?esc(sel.name):'请选择分类')+'</span>'+
+          '<span class="badge">'+(sel?natureLabel(sel):'')+'</span></div>');
+}
+function sheetPickCat(id,el){
+  if(state.edit.categoryId===id&&!state.edit.catOpen)return;
+  state.edit.categoryId=id;
+  haptic(8);
+  const grid=$('#sheetCatGrid');
+  if(grid){
+    grid.querySelectorAll('.on').forEach(x=>x.classList.remove('on'));
+    const cell=el||grid.querySelector('[data-cat="'+id+'"]');
+    if(cell)cell.classList.add('on','pop');
+    setTimeout(()=>{state.edit.catOpen=false;refreshSheetCat();},210);
+  }else{
+    state.edit.catOpen=false;refreshSheetCat();
+  }
+}
+function sheetCalcRow(){
+  const o=['+','-','*','/','(',')'].map((op,i)=>{
+    const label=['＋','−','×','÷','(',')'][i];
+    return '<button type="button" class="calc-op" onclick="insertOpSheet(\''+op+'\')">'+label+'</button>';
+  }).join('');
+  return '<div class="calc-row">'+o+'</div>';
+}
+function renderSheetPreview(){
+  const p=$('#sheetPreview'); if(!p||!state.edit)return;
+  const s=String(state.edit.amount||'').trim();
+  const v=calcExpr(s);
+  p.innerHTML=(v!==null&&/[+\-*/]/.test(s))?'= '+fmtMoney(v):'';
+}
+function renderSheet(){
+  const el=$('#sheet'); if(!el||!state.edit)return;
+  const e=state.edit;
+  el.innerHTML=
+    '<div class="sheet-grab"></div>'+
+    '<div class="sheet-head"><h3>修改记录</h3>'+
+      '<button class="btn sm ghost" style="padding:4px 10px;font-size:17px" onclick="closeSheet()">✕</button></div>'+
+    '<div class="seg">'+
+      '<button class="'+(e.type==='expense'?'on expense':'')+'" onclick="sheetType(\'expense\')">支出</button>'+
+      '<button class="'+(e.type==='income'?'on income':'')+'" onclick="sheetType(\'income\')">收入</button>'+
+    '</div>'+
+    '<div class="amount-wrap"><span class="cur">¥</span><input id="sheetAmount" type="text" inputmode="decimal" placeholder="0" value="'+esc(e.amount)+'" oninput="state.edit.amount=this.value;renderSheetPreview()"></div>'+
+    sheetCalcRow()+
+    '<div id="sheetPreview" style="font-size:13px;color:var(--good);font-weight:600;min-height:18px;margin:-4px 0 10px"></div>'+
+    '<div id="sheetCat">'+sheetCatHTML()+'</div>'+
+    '<div class="field"><span>日期</span><input type="date" value="'+esc(e.date)+'" onchange="state.edit.date=this.value"></div>'+
+    '<div class="field"><span>备注</span><input type="text" placeholder="选填" value="'+esc(e.note)+'" oninput="state.edit.note=this.value"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<button class="sheet-del" onclick="deleteFromSheet()">删除</button>'+
+      '<button class="sheet-save" onclick="saveSheet()">保存修改</button>'+
+    '</div>';
+  renderSheetPreview();
+}
+// 改完只刷新当前页面上受影响的那一块，不整页重渲染
+function refreshAfterEdit(fromTodayExp){
+  if(state.view==='record')refreshRecordLists(fromTodayExp);
+  else if(state.view==='search')renderSearchResults();
+  else render();
+}
+function saveSheet(){
+  const e=state.edit; if(!e)return;
+  const amt=calcExpr(e.amount);
+  if(!amt||amt<=0){haptic([18,40,18]);toast('请输入金额');return;}
+  if(!e.categoryId){haptic([18,40,18]);toast('请选择分类');return;}
+  const t=state.transactions.find(x=>x.id===e.id);
+  if(!t){closeSheet();return;}
+  const before=todayExpenseTotal();
+  t.type=e.type;t.categoryId=e.categoryId;t.amount=amt;t.date=e.date;t.note=(e.note||'').trim();t.updatedAt=Date.now();
+  saveAll();
+  closeSheet();
+  haptic([10,30,10]);
+  refreshAfterEdit(before);
+  toast('改好了 ✓');
+}
+function deleteFromSheet(){
+  const e=state.edit; if(!e)return;
+  const t=state.transactions.find(x=>x.id===e.id);
+  if(!t)return;
+  const before=todayExpenseTotal();
+  t.deletedAt=Date.now();
+  saveAll();
+  closeSheet();
+  haptic([12,26,12]);
+  refreshAfterEdit(before);
+  toast('已删除','撤销',()=>{t.deletedAt=null;saveAll();refreshAfterEdit();toast('已恢复');});
 }
 
 function renderTodaySummary(){
@@ -802,7 +928,7 @@ function recentTxs(limit){
 function txKey(t){return String(t.date||'')+'#'+String(t.createdAt||0).padStart(14,'0');}
 function txRowHTML(t,showDate){
   const c=catById(t.categoryId);
-  return '<div class="row rec-row" onclick="editTx(\''+t.id+'\')">'+
+  return '<div class="row rec-row" onclick="openEditSheet(\''+t.id+'\')">'+
     '<span class="ico">'+(c?c.icon:'❓')+'</span>'+
     '<div class="mid"><div class="nm">'+(c?esc(c.name):'未知')+
       (t.note?'<span class="rec-note">'+esc(t.note)+'</span>':'')+
