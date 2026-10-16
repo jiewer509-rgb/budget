@@ -168,6 +168,18 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .row .amt{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
 .amt.in{color:var(--income)} .amt.out{color:var(--expense)}
 .row .badge{font-size:10px;padding:1px 6px;border-radius:6px;border:1px solid var(--border);color:var(--muted)}
+/* 最近记录：点一条就改，右边 ✕ 直接删 */
+.rec-day{display:flex;justify-content:space-between;align-items:baseline;font-size:11px;font-weight:700;
+  color:var(--muted);padding:10px 2px 4px;border-bottom:1px solid var(--border)}
+.rec-day .dsum{font-variant-numeric:tabular-nums}
+.rec-row{cursor:pointer;border-radius:8px;padding-left:6px;padding-right:6px;margin:0 -6px}
+.rec-row:active{background:var(--surface-2)}
+.rec-note{font-size:11px;color:var(--muted);font-weight:400;margin-left:5px}
+.rec-hint{font-size:11px;color:var(--muted);margin:-4px 0 6px}
+.del-x{flex-shrink:0;width:28px;height:28px;border-radius:50%;border:1px solid var(--border);background:transparent;
+  color:var(--muted);font-size:13px;line-height:1;cursor:pointer;padding:0;font-family:inherit;
+  transition:transform .09s,background .12s,color .12s}
+.del-x:active{transform:scale(.86);background:var(--surface-2);color:var(--critical);border-color:var(--critical)}
 .empty{text-align:center;color:var(--muted);padding:30px 10px;font-size:14px}
 
 /* ===== 预算 ===== */
@@ -511,7 +523,10 @@ function renderTabbar(){
   const tabs=[['record','每日记账','✍️'],['month','本月','📊'],['budget','预算','🎯'],['trend','趋势','📈']];
   $('#tabbar').innerHTML=tabs.map(([k,n,i])=>'<button class="'+(state.view===k?'on':'')+'" onclick="go(\''+k+'\')"><span class="ti">'+i+'</span>'+n+'</button>').join('');
 }
-function go(k){state.view=k;state.statCat=null;render();window.scrollTo(0,0);}
+function go(k){
+  if(k==='search'&&state.view!=='search')state.searchQuery='';  // 每次进来先看最近记录
+  state.view=k;state.statCat=null;render();window.scrollTo(0,0);
+}
 function gearBtn(){return '<button class="btn sm ghost" style="padding:4px 8px;font-size:16px" onclick="go(\'search\')">🔍</button><button class="btn sm ghost" style="padding:4px 8px;font-size:18px" onclick="go(\'settings\')">⚙️</button>';}
 
 /* =========================================================================
@@ -547,8 +562,19 @@ function renderRecord(v){
       '<button class="save-btn" onclick="saveTx()">'+(editing?'保存修改':'保存')+'</button>'+
       (editing?'<button class="btn danger" style="width:100%;margin-top:8px" onclick="delTx()">删除这条</button>':'')+
     '</div>'+
-    renderTodaySummary();
+    '<div id="todayWrap">'+renderTodaySummary()+'</div>'+
+    '<div id="recentWrap">'+recentListHTML()+'</div>';
   renderAmountPreview();
+}
+// 删除后只重绘这两块，不整页重渲染（保住滚动位置）
+function refreshRecordLists(fromTodayExp){
+  const tw=$('#todayWrap');
+  if(tw){
+    tw.innerHTML=renderTodaySummary();
+    if(fromTodayExp!=null)animateNumber($('#todayExp'),fromTodayExp,todayExpenseTotal());
+  }
+  const rw=$('#recentWrap');
+  if(rw)rw.innerHTML=recentListHTML();
 }
 
 function setRecType(t){
@@ -682,6 +708,7 @@ function saveTx(){
   if(!state.rec.date){haptic([18,40,18]);toast('请选择日期');return;}
   const before=todayExpenseTotal();
   const editing=!!state.rec.editId;
+  const backTo=(editing&&state.rec.returnView&&state.rec.returnView!==state.view)?state.rec.returnView:null;
   if(editing){
     const t=state.transactions.find(x=>x.id===state.rec.editId);
     if(t){t.type=state.rec.type;t.categoryId=state.rec.categoryId;t.amount=amt;t.date=state.rec.date;t.note=state.rec.note.trim();t.updatedAt=Date.now();}
@@ -689,6 +716,7 @@ function saveTx(){
     state.transactions.push({id:uid(),type:state.rec.type,categoryId:state.rec.categoryId,amount:amt,date:state.rec.date,note:state.rec.note.trim(),createdAt:Date.now(),updatedAt:Date.now(),deletedAt:null});
   }
   state.rec={type:state.rec.type,categoryId:state.rec.categoryId,amount:'',date:todayStr(),note:'',editId:null};
+  if(backTo)state.view=backTo;
   saveAll();render();
   haptic(editing?[10,30,10]:[14,28,14]);
   if(editing){toast('改好了 ✓');return;}
@@ -699,7 +727,8 @@ function saveTx(){
 function editTx(id){
   const t=state.transactions.find(x=>x.id===id);
   if(!t)return;
-  state.rec={type:t.type,categoryId:t.categoryId,amount:String(t.amount),date:t.date,note:t.note||'',editId:id};
+  state.rec={type:t.type,categoryId:t.categoryId,amount:String(t.amount),date:t.date,note:t.note||'',editId:id,
+    returnView:state.view};   // 改完回到原来那一页
   state.view='record';render();window.scrollTo(0,0);
 }
 
@@ -710,6 +739,7 @@ async function delTx(){
   if(!ok)return;
   const t=state.transactions.find(x=>x.id===id);
   if(t){t.deletedAt=Date.now();}
+  if(state.rec.returnView)state.view=state.rec.returnView;
   state.rec={type:'expense',categoryId:(catsOf('expense')[0]||{}).id,amount:'',date:todayStr(),note:'',editId:null};
   saveAll();render();
   toast('已删除','撤销',()=>{t.deletedAt=null;saveAll();render();toast('已恢复');});
@@ -760,6 +790,66 @@ function renderTodaySummary(){
   }
   html+='</div>';
   return html;
+}
+
+/* ---------------- 最近记录：点一条改，✕ 直接删 ---------------- */
+const RECENT_LIMIT=10;
+function recentTxs(limit){
+  return state.transactions.filter(t=>!t.deletedAt)
+    .sort((a,b)=>txKey(b).localeCompare(txKey(a)))
+    .slice(0,limit);
+}
+function txKey(t){return String(t.date||'')+'#'+String(t.createdAt||0).padStart(14,'0');}
+function txRowHTML(t,showDate){
+  const c=catById(t.categoryId);
+  return '<div class="row rec-row" onclick="editTx(\''+t.id+'\')">'+
+    '<span class="ico">'+(c?c.icon:'❓')+'</span>'+
+    '<div class="mid"><div class="nm">'+(c?esc(c.name):'未知')+
+      (t.note?'<span class="rec-note">'+esc(t.note)+'</span>':'')+
+      (t.date<ARCHIVE_BEFORE?'<span class="badge" style="margin-left:5px">历史</span>':'')+
+      (showDate?'<span class="rec-note" style="opacity:.75">'+esc(t.date)+'</span>':'')+
+    '</div></div>'+
+    '<div class="amt '+(t.type==='income'?'in':'out')+'">'+(t.type==='income'?'+':'-')+fmtMoney(t.amount)+'</div>'+
+    '<button class="del-x" aria-label="删除" onclick="event.stopPropagation();deleteTxById(\''+t.id+'\')">✕</button>'+
+  '</div>';
+}
+function recentListHTML(){
+  const list=recentTxs(RECENT_LIMIT);
+  let html='<div class="card">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
+      '<h3 style="margin:0">最近记录</h3>'+
+      '<button class="btn sm ghost" style="padding:3px 8px" onclick="go(\'search\')">全部 ›</button>'+
+    '</div>';
+  if(!list.length){
+    return html+'<div class="empty">还没有记录，上面记一笔试试</div></div>';
+  }
+  html+='<div class="rec-hint">点任意一条可修改，点 ✕ 删除（可撤销）</div>';
+  let lastDay='';
+  list.forEach(t=>{
+    if(t.date!==lastDay){
+      lastDay=t.date;
+      const daySum=dayExpenseTotal(t.date);
+      html+='<div class="rec-day"><span>'+esc(t.date)+(weekdayOf(t.date)?' '+weekdayOf(t.date):'')+'</span>'+
+        '<span class="dsum">'+fmtMoney(daySum)+'</span></div>';
+    }
+    html+=txRowHTML(t);
+  });
+  return html+'</div>';
+}
+function deleteTxById(id){
+  const t=state.transactions.find(x=>x.id===id);
+  if(!t||t.deletedAt)return;
+  const before=todayExpenseTotal();
+  t.deletedAt=Date.now();
+  haptic([12,26,12]);
+  saveAll();
+  refreshRecordLists(before);
+  if(state.view==='search')renderSearchResults();
+  toast('已删除','撤销',()=>{
+    t.deletedAt=null;saveAll();
+    if(state.view==='record')refreshRecordLists();else render();
+    toast('已恢复');
+  });
 }
 
 /* =========================================================================
@@ -1338,33 +1428,29 @@ function importModeDialog(data){
  * ========================================================================= */
 function renderSearch(v){
   v.innerHTML=
-    '<div class="topbar"><div><h1>搜索记录</h1><div class="sub">全部历史</div></div>'+gearBtn()+'</div>'+
+    '<div class="topbar"><div><h1>全部记录</h1><div class="sub">默认列出最近 · 输入关键字筛选</div></div>'+gearBtn()+'</div>'+
     '<div class="card"><input type="text" placeholder="搜索备注/分类/金额/日期..." value="'+esc(state.searchQuery||'')+'" oninput="state.searchQuery=this.value;renderSearchResults()" style="width:100%;border:1px solid var(--border);border-radius:10px;padding:10px;background:var(--surface);color:var(--ink);font-size:15px"></div>'+
     '<div id="searchResults"></div>';
   renderSearchResults();
 }
 function searchTxs(q){
-  if(!q)return[];
+  const all=state.transactions.filter(t=>!t.deletedAt).sort((a,b)=>txKey(b).localeCompare(txKey(a)));
+  if(!q)return all.slice(0,60);          // 不输入关键字就直接列最近记录
   q=q.toLowerCase();
-  return state.transactions.filter(t=>!t.deletedAt).filter(t=>{
+  return all.filter(t=>{
     const c=catById(t.categoryId);
     return (t.note||'').toLowerCase().includes(q)||(c&&c.name.toLowerCase().includes(q))||t.date.includes(q)||String(t.amount).includes(q);
-  }).sort((a,b)=>(b.date+a.createdAt).localeCompare(a.date+a.createdAt)).slice(0,200);
+  }).slice(0,200);
 }
 function renderSearchResults(){
   const el=$('#searchResults'); if(!el)return;
   const q=(state.searchQuery||'').trim();
-  if(!q){el.innerHTML='<div class="empty">输入关键字搜索全部历史记录</div>';return;}
   const list=searchTxs(q);
-  if(!list.length){el.innerHTML='<div class="empty">无匹配记录</div>';return;}
-  el.innerHTML='<div class="card"><h3>'+list.length+' 条结果'+(list.length===200?'（最多显示200）':'')+'</h3>'+list.map(t=>{
-    const c=catById(t.categoryId);
-    return '<div class="row">'+
-      '<span class="ico">'+(c?c.icon:'❓')+'</span>'+
-      '<div class="mid"><div class="nm">'+(c?esc(c.name):'未知')+'</div><div class="sub">'+esc(t.date)+(t.date<ARCHIVE_BEFORE?' <span class="badge">历史</span>':'')+' '+(t.note?esc(t.note):'')+'</div></div>'+
-      '<div class="amt '+(t.type==='income'?'in':'out')+'">'+(t.type==='income'?'+':'-')+fmtMoney(t.amount)+'</div>'+
-      '<button class="btn sm ghost" style="padding:4px 8px;flex-shrink:0" onclick="editTx(\''+t.id+'\')">修改</button></div>';
-  }).join('')+'</div>';
+  if(!list.length){el.innerHTML='<div class="empty">'+(q?'无匹配记录':'还没有任何记录')+'</div>';return;}
+  el.innerHTML='<div class="card"><h3>'+
+      (q?list.length+' 条结果'+(list.length===200?'（最多显示200）':''):'最近 '+list.length+' 条')+
+    '</h3><div class="rec-hint">点任意一条可修改，点 ✕ 删除（可撤销）</div>'+
+    list.map(t=>txRowHTML(t,true)).join('')+'</div>';
 }
 
 /* =========================================================================
