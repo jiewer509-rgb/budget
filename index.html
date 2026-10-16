@@ -406,7 +406,13 @@ function periodicAvg(m,cat){const P=cat.periodMonths||1;let total=0;
   for(let i=0;i<P;i++)total+=monthExpenseByCat(shiftMonth(m,-i),cat.id);
   return total/P;}
 function yearIncome(m){const y=m.split('-')[0];let s=0;state.transactions.forEach(t=>{if(!t.deletedAt&&t.type==='income'&&t.date.startsWith(y))s+=Number(t.amount||0);});return s;}
-function yearExpense(m){const y=m.split('-')[0];let s=0;state.transactions.forEach(t=>{if(!t.deletedAt&&t.type==='expense'&&t.date.startsWith(y))s+=Number(t.amount||0);});return s;}
+function yearExpense(m){const y=m.split('-')[0];let s=0;
+  state.categories.filter(c=>c.type==='expense').forEach(c=>{
+    for(let i=1;i<=12;i++){const mm=y+'-'+pad(i);
+      s+=(c.nature==='periodic')?periodicAvg(mm,c):monthExpenseByCat(mm,c.id);
+    }
+  });
+  return s;}
 
 /* ---------------- 渲染分发 ---------------- */
 function render(){
@@ -677,15 +683,32 @@ function renderMonthDonut(){
     showTxDetail(it, list);
   });
 }
+function yearExpenseItems(y){
+  const items=[];
+  state.categories.filter(c=>c.type==='expense').forEach(c=>{
+    let v=0;
+    for(let i=1;i<=12;i++){const mm=y+'-'+pad(i);
+      v+=(c.nature==='periodic')?periodicAvg(mm,c):monthExpenseByCat(mm,c.id);
+    }
+    if(v>0)items.push({id:c.id,name:c.name,value:v,type:'expense',nature:c.nature,icon:c.icon});
+  });
+  const natureOrder={recurring:0,periodic:1,oneoff:2};
+  items.sort((a,b)=>(natureOrder[a.nature]-natureOrder[b.nature])||(b.value-a.value));
+  return items.map((it,i)=>({...it,color:'hsl('+Math.round((i*137.508)%360)+', 60%, 46%)'}));
+}
 function renderAnnualDonut(){
   const el=$('#annualDonut'); if(!el)return;
   const y=state.month.split('-')[0];
   const txs=state.transactions.filter(t=>!t.deletedAt&&t.type==='expense'&&t.date.startsWith(y));
-  if(!txs.length){el.innerHTML='<div class="empty">本年度暂无支出</div>';return;}
-  const shown=aggregateByCat(txs);
+  const shown=yearExpenseItems(y);
+  if(!shown.length){el.innerHTML='<div class="empty">本年度暂无支出</div>';return;}
   const total=shown.reduce((s,x)=>s+x.value,0);
   el.innerHTML=donutSVG(shown,total,'年度支出');
-  bindDonutTap(el, shown, it=>showTxDetail(it, txs));
+  bindDonutTap(el, shown, it=>{
+    const c=catById(it.id);
+    const list=(c&&c.nature==='periodic')?state.transactions.filter(t=>!t.deletedAt&&t.type==='expense'&&t.categoryId===it.id):txs;
+    showTxDetail(it, list);
+  });
 }
 function renderMonthIncomeDonut(){
   const el=$('#incomeDonut'); if(!el)return;
@@ -797,9 +820,10 @@ function renderBudgetPage(v){
 function renderBudgetActual(){
   const el=$('#budgetActual'); if(!el)return;
   const m=state.month;
+  const TOTAL_CAP=7000; // 本月总预算上限
   const items=(state.budgets[m]&&state.budgets[m].items)||{};
   const groups=[['recurring','每日固定'],['periodic','周期'],['oneoff','偶发（不摊入预算）']];
-  let overCount=0, overTotal=0, setCount=0;
+  let totalActual=0, setCount=0, topOver=null;
   let html='';
   groups.forEach(([nature,label])=>{
     const cats=state.categories.filter(c=>c.type==='expense'&&c.nature===nature).sort((a,b)=>a.sort-b.sort);
@@ -813,6 +837,11 @@ function renderBudgetActual(){
       return {c,b,effectiveActual,ratio,over,overshoot:over?effectiveActual-b:0};
     });
     rows.sort((a,b)=>b.effectiveActual-a.effectiveActual);
+    rows.forEach(r=>{
+      totalActual+=r.effectiveActual;
+      if(r.b>0)setCount++;
+      if(r.over&&(!topOver||r.overshoot>topOver.overshoot))topOver=r;
+    });
     if(nature==='oneoff'){
       const total=rows.reduce((s,r)=>s+r.effectiveActual,0);
       html+='<div class="section-title" style="display:flex;justify-content:space-between;align-items:center">'+
@@ -828,7 +857,6 @@ function renderBudgetActual(){
       '</div>';
       return;
     }
-    rows.forEach(r=>{if(r.over){overCount++;overTotal+=r.overshoot;} if(r.b>0)setCount++;});
     html+='<div class="section-title">'+label+'</div><div class="budget-grid">'+
       rows.map(r=>{
         const cls=r.over?'over':(r.b>0&&r.ratio>=0.85?'warn':'');
@@ -841,9 +869,15 @@ function renderBudgetActual(){
   });
   const budgetedIds=state.categories.filter(c=>c.type==='expense'&&c.nature!=='oneoff').map(c=>c.id);
   const totalBudget=budgetedIds.reduce((s,id)=>s+Number(items[id]||0),0);
-  el.innerHTML='<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+
-    (overCount>0?'<span style="color:var(--critical);font-weight:700">⚠ '+overCount+' 项超支 '+fmtMoney(overTotal)+'</span>':'<span style="color:var(--good);font-weight:700">✅ 未超支</span>')+
-    ' · 已设 '+setCount+' 项 · 合计 '+fmtMoney(totalBudget)+'/¥7000 · 点卡片看明细/改预算</div>'+html;
+  let summary;
+  if(totalActual>TOTAL_CAP){
+    summary='<span style="color:var(--critical);font-weight:700">⚠ 超支 '+fmtMoney(totalActual-TOTAL_CAP)+'</span>'+
+      (topOver?' · 超支最多：'+topOver.c.icon+' '+esc(topOver.c.name)+'（超 ¥'+fmtMoney(topOver.overshoot)+'）':'');
+  }else{
+    summary='<span style="color:var(--good);font-weight:700">✅ 本月剩余额度 '+fmtMoney(TOTAL_CAP-totalActual)+'</span>';
+  }
+  el.innerHTML='<div style="font-size:13px;color:var(--ink-2);margin-bottom:6px">'+summary+
+    ' · 已设 '+setCount+' 项 · 预算合计 '+fmtMoney(totalBudget)+'/¥'+TOTAL_CAP+' · 点卡片看明细/改预算</div>'+html;
 }
 
 function showBudgetDetail(catId){
