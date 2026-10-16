@@ -84,6 +84,10 @@ main#view{padding:16px 14px 24px;min-height:100vh}
 .amount-wrap .cur{font-size:26px;font-weight:700}
 #amount{flex:1;border:none;background:transparent;font-size:36px;font-weight:700;font-family:inherit;color:var(--ink);outline:none;width:100%;min-width:0}
 #amount::placeholder{color:var(--muted)}
+.calc-row{display:flex;gap:6px;margin-bottom:8px}
+.calc-op{flex:1;padding:8px;font-size:17px;font-weight:700;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--ink);cursor:pointer}
+.calc-op:active{background:var(--surface-2)}
+#amountPreview{font-size:13px;color:var(--good);font-weight:600;min-height:18px;margin:-4px 0 10px}
 .cat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .cat{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;border-radius:12px;
   border:1px solid var(--border);background:var(--surface);cursor:pointer}
@@ -461,7 +465,16 @@ function renderRecord(v){
         '<button class="'+(rec.type==='expense'?'on expense':'')+'" onclick="setRecType(\'expense\')">支出</button>'+
         '<button class="'+(rec.type==='income'?'on income':'')+'" onclick="setRecType(\'income\')">收入</button>'+
       '</div>'+
-      '<div class="amount-wrap"><span class="cur">¥</span><input id="amount" type="number" inputmode="decimal" placeholder="0" min="0" step="0.01" value="'+esc(rec.amount)+'" oninput="state.rec.amount=this.value"></div>'+
+      '<div class="amount-wrap"><span class="cur">¥</span><input id="amount" type="text" inputmode="decimal" placeholder="0" value="'+esc(rec.amount)+'" oninput="state.rec.amount=this.value;renderAmountPreview()"></div>'+
+      '<div class="calc-row">'+
+        '<button type="button" class="calc-op" onclick="insertOp(\'+\')">＋</button>'+
+        '<button type="button" class="calc-op" onclick="insertOp(\'-\')">−</button>'+
+        '<button type="button" class="calc-op" onclick="insertOp(\'*\')">×</button>'+
+        '<button type="button" class="calc-op" onclick="insertOp(\'/\')">÷</button>'+
+        '<button type="button" class="calc-op" onclick="insertOp(\'(\')">(</button>'+
+        '<button type="button" class="calc-op" onclick="insertOp(\')\')">)</button>'+
+      '</div>'+
+      '<div id="amountPreview"></div>'+
       '<div class="field" style="justify-content:space-between;margin-bottom:6px"><span style="font-weight:600;color:var(--ink)">分类</span>'+
         '<button class="btn sm ghost" style="padding:3px 8px" onclick="toggleCat()">'+(state.catExpanded?'收起 ▴':'选择 ▾')+'</button></div>'+
       (state.catExpanded
@@ -510,8 +523,33 @@ function renderCatGrid(){
   el.innerHTML=catGridHTML(cats);
 }
 
+function calcExpr(s){
+  const str=String(s==null?'':s).trim();
+  if(!str)return null;
+  if(!/^[0-9+\-*/().\s]+$/.test(str))return null;
+  try{
+    const v=Function('"use strict";return('+str+')')();
+    return (typeof v==='number'&&isFinite(v))?v:null;
+  }catch(e){return null;}
+}
+function insertOp(op){
+  const el=document.getElementById('amount');
+  if(!el)return;
+  const pos=(el.selectionStart!=null?el.selectionStart:el.value.length);
+  el.value=el.value.slice(0,pos)+op+el.value.slice(pos);
+  state.rec.amount=el.value;
+  renderAmountPreview();
+  el.focus();
+}
+function renderAmountPreview(){
+  const el=document.getElementById('amountPreview');
+  if(!el)return;
+  const s=(state.rec.amount||'').trim();
+  const v=calcExpr(s);
+  el.innerHTML=(v!==null&&/[+\-*/]/.test(s))?'= ¥'+fmtMoney(v):'';
+}
 function saveTx(){
-  const amt=parseFloat(state.rec.amount);
+  const amt=calcExpr(state.rec.amount);
   if(!amt||amt<=0){toast('请输入金额');return;}
   if(!state.rec.categoryId){toast('请选择分类');return;}
   if(!state.rec.date){toast('请选择日期');return;}
