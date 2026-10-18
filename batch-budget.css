@@ -1,0 +1,14 @@
+.batch-budget-toolbar{display:flex;justify-content:flex-end;margin:8px 0 12px}.batch-budget-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}.batch-budget-row span{font-size:14px}.batch-budget-row input{width:120px;max-width:45%;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:var(--bg,#f7f6fb);color:inherit;text-align:right;font:inherit}.batch-budget-row input:focus{outline:2px solid #a398d2;outline-offset:1px}
+
+:root{--income:#94651d;--pool-b:#aa5155;--pool-b-bg:#fcecec}.relaxed-family.little-b{background:var(--pool-b-bg)}.little-b .little-chart-card{background:#f9dfe0;color:var(--pool-b)}.income,.amt.in,.today-income,.desk-income{color:var(--income)}
+@media(prefers-color-scheme:dark){:root{--income:#dfb865;--pool-b:#efa7ac;--pool-b-bg:#402b2f}.little-b .little-chart-card{background:#513238}}
+
+.card:has(.seg .on.income){--brand:#94651d;--pool-total-bg:#faf0dc;--pool-total:#94651d}.card:has(.seg .on.income) #amount{color:var(--income)}.card:has(.seg .on.income) .save-btn{background:var(--income)}
+/* Income category selection: muted light brown. */
+.income-tone{--tone:#916c49;--tone-bg:#f4eadf;--tone-border:#dfcbb6}
+body[data-tab=month]{--income:#a96868;--expense:#5f8574;--summary-income:#c99494;--summary-expense:#adc9b8}
+body[data-tab=month] .comparison-income{background:var(--summary-income);fill:var(--summary-income)}
+body[data-tab=month] .comparison-expense{background:var(--summary-expense);fill:var(--summary-expense)}
+body[data-tab=month] .tile:has(.income){background:#f8eeee;border-color:#eedcdc}
+body[data-tab=month] .tile:has(.expense){background:#edf5ef;border-color:#dce9df}
+@media(prefers-color-scheme:dark){.income-tone{--tone:#d8b591;--tone-bg:#3d3329;--tone-border:#70583f}body[data-tab=month]{--income:#dca8a8;--expense:#a9cdb7;--summary-income:#bc8585;--summary-expense:#91b39f}body[data-tab=month] .tile:has(.income){background:#3e2d30;border-color:#5b4043}body[data-tab=month] .tile:has(.expense){background:#293d33;border-color:#3e594a}}

@@ -1,6 +1,24 @@
-# 敏感/临时文件，绝不提交到公开仓库
+# Private ledger data and local exports
+*.json
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.zip
+*.tar.gz
+my-ledger.html
+personal-ledger.js
+upload/
+backups/
+private/
 _ledger_utf8.csv
-ledger-import-*.json
+ledger-import-*
 gen-import.js
 server.js
 icon.html
+# Local tooling and hosting identity
+.openai/
+.env
+.env.*
+node_modules/
+.DS_Store
